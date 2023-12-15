@@ -195,24 +195,24 @@ class DeepSerializer(serializers.ModelSerializer):
             )(context=self.context)
 
             if dicts := [
-                d_n for d_n in to_create 
+                d_n for d_n in to_create
                 if isinstance(d_n[0].get(field_name, None), dict)
             ]:
                 # Executed for one_to_one or one_to_many relationships
                 dicts_data = [d[field_name] for d, _ in dicts]
                 zip_dicts = zip(dicts, serializer.deep_list_travel(dicts_data))
-                
+
                 for (data, rep), result in zip_dicts:
                     data[field_name], rep[field_name] = result
 
             elif lists := [
-                d_n for d_n in to_create 
+                d_n for d_n in to_create
                 if isinstance(d_n[0].get(field_name, None), list)
             ]:
                 # Executed for many_to_many relationships
                 lists_data = [i for d, _ in lists for i in d[field_name]]
                 flatten_results = serializer.deep_list_travel(lists_data)
-                
+
                 for data, nested in lists:
                     if length := len(data[field_name]):
                         data_zip = zip(*flatten_results[:length])
