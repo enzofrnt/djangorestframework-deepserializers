@@ -237,7 +237,7 @@ class DeepSerializer(serializers.ModelSerializer):
             'verbose'=False is used to only send the primary_key of the created model,
             if there has been errors it will only send the dict with the errors regardless of verbose
 
-        The deep_create only work with one_to_many or many_to_many relationships,
+        The deep_create only work with one_to_one, one_to_many or many_to_many relationships,
             If you need to create a model through a many_to_one juste reverse your json to get a one_to_many
             example of 'Admin' group: {
                 "id": "Admin",
