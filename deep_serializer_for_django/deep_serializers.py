@@ -346,7 +346,8 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         try:
             with atomic():
-                serializer = self.get_serializer(self.Meta.model, mode="Nested")(context=self.context)
+                serializer_class = self.get_serializer(self.Meta.model, mode="Nested")
+                serializer = serializer_class(context=self.context)
                 if data and isinstance(data, dict):
                     primary_key, representation = serializer.deep_dict_travel(data)
                     if "ERROR" in representation:

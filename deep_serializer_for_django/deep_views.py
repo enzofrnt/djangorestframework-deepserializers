@@ -109,7 +109,10 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         )
         queryset = self.queryset.prefetch_related(*serializer.prefetch_related)
         # Filter creation
-        filter_fields = {field: value for field, value in params.items() if field in self._filter_fields}
+        filter_fields = {}
+        for field, value in params.items():
+            if field in self._filter_fields:
+                filter_fields[field] = value        
         if filter_fields:
             queryset = queryset.filter(**filter_fields)
 
