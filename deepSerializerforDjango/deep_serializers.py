@@ -1,4 +1,3 @@
-import json
 from collections import OrderedDict
 
 from django.db.transaction import atomic
@@ -134,13 +133,14 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         nested = {}
         for field_name, model in self._nested_models.items():
+            # travel through all nested models
             field_data = data.get(field_name, None)
             serializer = self.get_serializer(model, mode="Nested")(context=self.context)
             if isinstance(field_data, dict):
-                # for one_to_one relationships
+                # Executed for one_to_one or one_to_many relationships
                 data[field_name], nested[field_name] = serializer.deep_dict_travel(field_data)
             elif isinstance(field_data, list):
-                # for one_to_many relationships
+                # Executed for many_to_many relationships
                 data[field_name], nested[field_name] = map(list, zip(*serializer.deep_list_travel(field_data)))
         return self.update_or_create(data, nested)
 
@@ -159,13 +159,14 @@ class DeepSerializer(serializers.ModelSerializer):
         data_and_nested_list = [(data, {}) for data in data_list]
         to_create = [d_n for d_n in data_and_nested_list if isinstance(d_n[0], dict)]
         for field_name, model in self._nested_models.items():
+            # travel through all nested models
             serializer = self.get_serializer(model, mode="Nested")(context=self.context)
             if dicts := [d_n for d_n in to_create if isinstance(d_n[0].get(field_name, None), dict)]:
-                # for one_to_one relationships
+                # Executed for one_to_one or one_to_many relationships
                 for (data, rep), result in zip(dicts, serializer.deep_list_travel([d[field_name] for d, _ in dicts])):
                     data[field_name], rep[field_name] = result
             elif lists := [d_n for d_n in to_create if isinstance(d_n[0].get(field_name, None), list)]:
-                # for one_to_many relationships
+                # Executed for many_to_many relationships
                 flatten_results = serializer.deep_list_travel([i for d, _ in lists for i in d[field_name]])
                 for data, nested in lists:
                     if length := len(data[field_name]):
@@ -245,11 +246,13 @@ class DeepSerializer(serializers.ModelSerializer):
                 "users": [
                     {
                         "firstname": 'john',
-                        "lastname": 'Doe'
+                        "lastname": 'Doe',
+                        "group": "Admin"
                     },
                     {
                         "firstname": 'jane',
-                        "lastname": 'Doe'
+                        "lastname": 'Doe',
+                        "group": "Admin"
                     }
                 ]
             }
@@ -261,7 +264,7 @@ class DeepSerializer(serializers.ModelSerializer):
                         "id": "Admin"
                         "description": "Group of admin"
                     }
-                }
+                },
                 {
                     "firstname": 'Jane',
                     "lastname": 'Doe'
