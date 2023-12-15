@@ -1,7 +1,7 @@
 from rest_framework.utils import model_meta
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
-from .serializers import DeepSerializer
+from .deep_serializers import DeepSerializer
 
 
 ########################################################################################################################

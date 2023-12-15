@@ -1,0 +1,1 @@
+The deepSerializerforDjango is a module for Django framework that allows you to serialize your models in a deep way. It means that you can serialize your models with all the related models and their related models and so on. It is very useful when you need to serialize your models in a complex way.
