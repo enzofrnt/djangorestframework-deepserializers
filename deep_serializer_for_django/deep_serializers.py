@@ -91,6 +91,8 @@ class DeepSerializer(serializers.ModelSerializer):
         field_name: contain the field name of the model who will be displayed with a serializer
         return: list of prefetch related filtered by depth and exclude
         """
+        if excludes is None:
+            excludes = []
         return [
             prefetch_related
             for prefetch_related in cls._prefetch_related
