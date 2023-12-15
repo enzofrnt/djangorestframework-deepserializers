@@ -17,7 +17,6 @@ from .deep_serializers import DeepSerializer
 class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
     """
     A unique viewset for all your need of deep read and deep write, made easy
-
     Read only version
     """
     _viewsets = {}
@@ -45,8 +44,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         Is used to create the list of all the possible field inside this view,
             Used to check if a filter or order_by params is valid for the request
 
-        Should never be called alone, because generate the list recursively through
-        all the nested models
+        Should never be called alone, because generate the list recursively through all the nested models
         """
         reverse_relations = model_meta.get_field_info(parent_model).reverse_relations
         exclude_set = {
@@ -67,8 +65,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         """
         models: list of model to register in the router
 
-        Is used to create all the viewset for the model in models and register
-        them inside the router
+        Is used to create all the viewset for the model in models and register them inside the router
         """
         for model in models:
             router.register(
@@ -80,7 +77,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
     def get_serializer_class(self):
         """
         Used to get the seralizer class for the current viewset for its mode,
-            No mode mean it will get the main serializer for the model
+        No mode mean it will get the main serializer for the model
         """
         return DeepSerializer.get_serializer(self.queryset.model, mode=self._mode)
 
@@ -97,8 +94,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         Display deeper model with 'depth' like 'depth=depth_level'.
         (example: /?depth=5)
         Remove deeper model with 'exclude' like 'exclude=foo' or 'exclude=foo,bar'
-        Exclude nested model of nested model like 
-        'exclude=bar__foo,bar__user__group,bar__user__comments'
+        Exclude nested model of nested model like 'exclude=bar__foo,bar__user__group,bar__user__comments'
         And you can do it all at once. (example: /?depth=10&order_by=foo&label=bar&group=bar)
         """
         params = self.request.query_params
@@ -127,10 +123,8 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
     @classmethod
     def get_view(cls, _model, mode: str = ""):
         """
-        Create a viewset for the _model and its mode if it does not exist, else it gets
-        the viewset back
-        You can create your own viewset that inherit DeepViewSet, and it will be used
-        when called upon
+        Create a viewset for the _model and its mode if it does not exist, else it gets the viewset back
+        You can create your own viewset that inherit DeepViewSet, and it will be used when called upon
         If your viewset is only used in a specific use-case, write it in the mode
 
         _model: Contain the model related to the viewset wanted
@@ -157,8 +151,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
             Display deeper model with 'depth' like 'depth=depth_level'.
             (example: /?depth=5)
             Remove deeper model with 'exclude' like 'exclude=foo' or 'exclude=foo,bar'
-            Exclude nested model of nested model 
-            like 'exclude=bar__foo,bar__user__group,bar__user__comments'
+            Exclude nested model of nested model like 'exclude=bar__foo,bar__user__group,bar__user__comments'
             And you can do it all at once. 
             (example: /?depth=10&order_by=foo&label=bar&group=bar)
             """
