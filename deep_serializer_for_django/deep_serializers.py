@@ -1,3 +1,7 @@
+"""
+This module is used to create a serializer that can be used to create or update a model with its nested models at any depth.
+"""
+
 from collections import OrderedDict
 
 from django.db.transaction import atomic

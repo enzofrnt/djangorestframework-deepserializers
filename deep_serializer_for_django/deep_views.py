@@ -1,7 +1,11 @@
+"""
+This module is used to create a unique viewset for all your need of deep read and deep write, made easy with the help of deep_serializer
+"""
+
 from rest_framework.utils import model_meta
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
-from .serializers import DeepSerializer
+from .deep_serializers import DeepSerializer
 
 
 ########################################################################################################################
