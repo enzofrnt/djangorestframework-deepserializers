@@ -1,5 +1,5 @@
 """
-This module is used to create a serializer that can be used to create or update a model 
+This module is used to create a serializer that can be used to create or update a model
 with its nested models at any depth.
 """
 
@@ -27,7 +27,7 @@ class DeepSerializer(serializers.ModelSerializer):
     def __init_subclass__(cls, **kwargs):
         """
         Used to save the important information like:
-            -> all the serializer inheriting DeepSerializer and avoid creating already created 
+            -> all the serializer inheriting DeepSerializer and avoid creating already created
             serializer
             -> all the nested_models for the current serializer
             -> all the prefetch_related for the current serializer
@@ -52,8 +52,8 @@ class DeepSerializer(serializers.ModelSerializer):
         model: contain the model to get the nested model from
         """
         exclude_set = {
-            name 
-            for name in model_meta.get_field_info(model).reverse_relations 
+            name
+            for name in model_meta.get_field_info(model).reverse_relations
             if name.endswith("_set")
         }
 
@@ -115,7 +115,7 @@ class DeepSerializer(serializers.ModelSerializer):
 
     def get_default_field_names(self, declared_fields, model_info):
         """
-        Has been overriden to only display requested fields with only the nested models 
+        Has been overriden to only display requested fields with only the nested models
         inside prefetch_related
         """
         return (
@@ -127,11 +127,11 @@ class DeepSerializer(serializers.ModelSerializer):
 
     def build_nested_field(self, field_name, relation_info, nested_depth):
         """
-        Has been overriden to enable the safe visualisation of 
+        Has been overriden to enable the safe visualisation of
          a deeply nested models without circular problem
         """
         serializer = self.get_serializer(
-            relation_info.related_model, 
+            relation_info.related_model,
             mode=f"Read{self.Meta.model.__name__}Nested"
         )
         serializer.prefetch_related = self.get_nested_prefetch(field_name)
@@ -141,7 +141,7 @@ class DeepSerializer(serializers.ModelSerializer):
     def deep_dict_travel(self, data: dict) -> tuple:
         """
         Used to travel inside a model and create the nested model first,
-            Will recursively create the upper instance to put the primary key of 
+            Will recursively create the upper instance to put the primary key of
              the nested object inside the fields
 
         Used inside deep_create and should never be called alone,
@@ -161,7 +161,7 @@ class DeepSerializer(serializers.ModelSerializer):
             elif isinstance(field_data, list):
                 # Executed for many_to_many relationships
                 data[field_name], nested[field_name] = map(
-                    list, 
+                    list,
                     zip(*serializer.deep_list_travel(field_data))
                 )
         return self.update_or_create(data, nested)
@@ -169,7 +169,7 @@ class DeepSerializer(serializers.ModelSerializer):
     def deep_list_travel(self, data_list: list) -> list[tuple]:
         """
         Used to travel inside a list of models and create the nested model first,
-            Will recursively create the upper instance to put the primary key of 
+            Will recursively create the upper instance to put the primary key of
             the nested object inside the fields
 
         Used inside deep_create and should never be called alone,
@@ -184,7 +184,7 @@ class DeepSerializer(serializers.ModelSerializer):
         ]
 
         to_create = [
-            d_n for d_n in data_and_nested_list 
+            d_n for d_n in data_and_nested_list
             if isinstance(d_n[0], dict)
         ]
 
@@ -225,10 +225,10 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         Create one instance with data without loosing functionality of Django or DRF
 
-        Is only used for deep_create but can be used for anything else with a little bit of 
+        Is only used for deep_create but can be used for anything else with a little bit of
         imagination
         instances: Used for performance,
-            if you already looked for all instance somewhere you can give them to instances 
+            if you already looked for all instance somewhere you can give them to instances
             and save one db request
 
         data: dict that will be created or updated
@@ -236,7 +236,7 @@ class DeepSerializer(serializers.ModelSerializer):
         return: tuple of -> primary_key of the model if there has been no errors,
                                 else it returns 'Failed to serialize'
                          -> representation of the models with their nested model if no errors,
-                                else it returns the dict with a 'ERROR' field that 
+                                else it returns the dict with a 'ERROR' field that
                                 contain what happened
         """
         model = self.Meta.model
@@ -252,10 +252,10 @@ class DeepSerializer(serializers.ModelSerializer):
 
     def bulk_update_or_create(self, data_and_nested: list[tuple[dict, dict]]) -> list[tuple]:
         """
-        Create all the instances in data in a bulk like manner without loosing 
+        Create all the instances in data in a bulk like manner without loosing
         functionality of Django or DRF
 
-        Is only used for deep_create but can be used for anything else with a 
+        Is only used for deep_create but can be used for anything else with a
         little bit of imagination
 
         data_and_nested: list containing tuple of 
@@ -276,8 +276,8 @@ class DeepSerializer(serializers.ModelSerializer):
                 found_pk = data.get(pk_name, None)
                 if found_pk not in created:
                     created_pk, representation = self.update_or_create(
-                                                                        data, 
-                                                                        nested, 
+                                                                        data,
+                                                                        nested,
                                                                         instances=instances
                                                                     )
                     found_pk = found_pk if found_pk is not None else created_pk
@@ -300,11 +300,11 @@ class DeepSerializer(serializers.ModelSerializer):
 
         If the resulting data is too big to be sent back,
             'verbose'=False is used to only send the primary_key of the created model,
-            if there has been errors it will only send the dict with the errors regardless 
+            if there has been errors it will only send the dict with the errors regardless
             of verbose
 
         The deep_create only work with one_to_one, one_to_many or many_to_many relationships,
-            If you need to create a model through a many_to_one juste reverse your json 
+            If you need to create a model through a many_to_one juste reverse your json
             to get a one_to_many
             example of 'Admin' group: {
                 "id": "Admin",
@@ -365,9 +365,9 @@ class DeepSerializer(serializers.ModelSerializer):
     @classmethod
     def get_serializer(cls, _model, mode: str = ""):
         """
-        Create a serializer for the _model and its mode if it does not exist, 
+        Create a serializer for the _model and its mode if it does not exist,
         else it gets the serializer back
-        You can create your own serializer that inherit DeepSerializer, 
+        You can create your own serializer that inherit DeepSerializer,
         and it will be used when called upon
         If your serializer is only used in a specific use-case, write it in the mode
 

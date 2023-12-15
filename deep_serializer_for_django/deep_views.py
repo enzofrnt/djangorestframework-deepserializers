@@ -45,7 +45,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         Is used to create the list of all the possible field inside this view,
             Used to check if a filter or order_by params is valid for the request
 
-        Should never be called alone, because generate the list recursively through 
+        Should never be called alone, because generate the list recursively through
         all the nested models
         """
         reverse_relations = model_meta.get_field_info(parent_model).reverse_relations
@@ -67,13 +67,13 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         """
         models: list of model to register in the router
 
-        Is used to create all the viewset for the model in models and register 
+        Is used to create all the viewset for the model in models and register
         them inside the router
         """
         for model in models:
             router.register(
-                model.__name__, 
-                cls.get_view(model), 
+                model.__name__,
+                cls.get_view(model),
                 basename=model.__name__
             )
 
@@ -90,11 +90,11 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
 
         Filtering is made with 'field_name=value'. 
         (example: /?label=foo&name=bar)
-        Filter by nested model field with 'field_name__field_name=value'. 
+        Filter by nested model field with 'field_name__field_name=value'.
         (example: /?group__label=bar)
-        Sorting is made with 'order_by' like 'order_by=field_name'. 
+        Sorting is made with 'order_by' like 'order_by=field_name'.
         (example: /?order_by=foo,bar)
-        Display deeper model with 'depth' like 'depth=depth_level'. 
+        Display deeper model with 'depth' like 'depth=depth_level'.
         (example: /?depth=5)
         Remove deeper model with 'exclude' like 'exclude=foo' or 'exclude=foo,bar'
         Exclude nested model of nested model like 
@@ -112,7 +112,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         filter_fields = {}
         for field, value in params.items():
             if field in self._filter_fields:
-                filter_fields[field] = value        
+                filter_fields[field] = value
         if filter_fields:
             queryset = queryset.filter(**filter_fields)
 
@@ -127,9 +127,9 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
     @classmethod
     def get_view(cls, _model, mode: str = ""):
         """
-        Create a viewset for the _model and its mode if it does not exist, else it gets 
+        Create a viewset for the _model and its mode if it does not exist, else it gets
         the viewset back
-        You can create your own viewset that inherit DeepViewSet, and it will be used 
+        You can create your own viewset that inherit DeepViewSet, and it will be used
         when called upon
         If your viewset is only used in a specific use-case, write it in the mode
 
@@ -148,13 +148,13 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
             View Set for the model: '{_model.__name__}' used for {mode if mode else 'Read and Write'}
 
             For GET request:
-            Filtering is made with 'field_name=value'. 
+            Filtering is made with 'field_name=value'.
             (example: /?label=foo&name=bar)
-            Filter by nested model field with 'field_name__field_name=value'. 
+            Filter by nested model field with 'field_name__field_name=value'.
             (example: /?group__label=bar)
-            Sorting is made with 'order_by' like 'order_by=field_name'. 
+            Sorting is made with 'order_by' like 'order_by=field_name'.
             (example: /?order_by=foo,bar)
-            Display deeper model with 'depth' like 'depth=depth_level'. 
+            Display deeper model with 'depth' like 'depth=depth_level'.
             (example: /?depth=5)
             Remove deeper model with 'exclude' like 'exclude=foo' or 'exclude=foo,bar'
             Exclude nested model of nested model 
