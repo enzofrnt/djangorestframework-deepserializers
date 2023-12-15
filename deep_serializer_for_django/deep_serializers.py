@@ -79,7 +79,7 @@ class DeepSerializer(serializers.ModelSerializer):
         return prefetch_related
 
     @classmethod
-    def to_prefetch_related(cls, excludes: list[str] = []):
+    def to_prefetch_related(cls, excludes: list[str] = None):
         """
         Used to get the prefetch_related from the current serializer,
             for either: ->  queryset.prefetch_related(
@@ -165,6 +165,39 @@ class DeepSerializer(serializers.ModelSerializer):
                     zip(*serializer.deep_list_travel(field_data))
                 )
         return self.update_or_create(data, nested)
+    
+    def process_dicts(self, to_create, field_name, serializer):
+        """
+        Used to process the dicts inside a list of models and create the nested model first,
+        Will recursively create the upper instance to put the primary key of the nested object inside the fields
+        """
+        dicts = [
+            d_n for d_n in to_create
+            if isinstance(d_n[0].get(field_name, None), dict)
+        ]
+        dicts_data = [d[field_name] for d, _ in dicts]
+        zip_dicts = zip(dicts, serializer.deep_list_travel(dicts_data))
+
+        for (data, rep), result in zip_dicts:
+            data[field_name], rep[field_name] = result
+
+    def process_lists(self, to_create, field_name, serializer):
+        """
+        Used to process the lists inside a list of models and create the nested model first,
+        Will recursively create the upper instance to put the primary key of the nested object inside the fields
+        """
+        lists = [
+            d_n for d_n in to_create
+            if isinstance(d_n[0].get(field_name, None), list)
+        ]
+        lists_data = [i for d, _ in lists for i in d[field_name]]
+        flatten_results = serializer.deep_list_travel(lists_data)
+
+        for data, nested in lists:
+            if length := len(data[field_name]):
+                data_zip = zip(*flatten_results[:length])
+                data[field_name], nested[field_name] = map(list, data_zip)
+                flatten_results = flatten_results[length:]
 
     def deep_list_travel(self, data_list: list) -> list[tuple]:
         """
@@ -178,45 +211,13 @@ class DeepSerializer(serializers.ModelSerializer):
         data_list: contain the list of dict to create or update
         return: the result of bulk_update_or_create
         """
-        data_and_nested_list = [
-            (data, {}) for data in data_list
-        ]
-
-        to_create = [
-            d_n for d_n in data_and_nested_list
-            if isinstance(d_n[0], dict)
-        ]
+        data_and_nested_list = [(data, {}) for data in data_list]
+        to_create = [d_n for d_n in data_and_nested_list if isinstance(d_n[0], dict)]
 
         for field_name, model in self._nested_models.items():
-            # travel through all nested models
-            serializer = self.get_serializer(
-                model, mode="Nested"
-            )(context=self.context)
-
-            if dicts := [
-                d_n for d_n in to_create
-                if isinstance(d_n[0].get(field_name, None), dict)
-            ]:
-                # Executed for one_to_one or one_to_many relationships
-                dicts_data = [d[field_name] for d, _ in dicts]
-                zip_dicts = zip(dicts, serializer.deep_list_travel(dicts_data))
-
-                for (data, rep), result in zip_dicts:
-                    data[field_name], rep[field_name] = result
-
-            elif lists := [
-                d_n for d_n in to_create
-                if isinstance(d_n[0].get(field_name, None), list)
-            ]:
-                # Executed for many_to_many relationships
-                lists_data = [i for d, _ in lists for i in d[field_name]]
-                flatten_results = serializer.deep_list_travel(lists_data)
-
-                for data, nested in lists:
-                    if length := len(data[field_name]):
-                        data_zip = zip(*flatten_results[:length])
-                        data[field_name], nested[field_name] = map(list, data_zip)
-                        flatten_results = flatten_results[length:]
+            serializer = self.get_serializer(model, mode="Nested")(context=self.context)
+            self.process_dicts(to_create, field_name, serializer)
+            self.process_lists(to_create, field_name, serializer)
 
         return self.bulk_update_or_create(data_and_nested_list)
 
@@ -369,9 +370,15 @@ class DeepSerializer(serializers.ModelSerializer):
             parent = cls.get_serializer(_model) if mode else DeepSerializer
 
             class CommonSerializer(parent):
+                """
+                This class is used to create a serializer that can be used to create or update a model
+                """
                 _mode = mode
 
                 class Meta:
+                    """
+                    This class is used to create a serializer that can be used to create or update a model
+                    """
                     model = _model
                     depth = 0
                     fields = parent.Meta.fields if mode else '__all__'
