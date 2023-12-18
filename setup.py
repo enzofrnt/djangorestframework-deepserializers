@@ -10,7 +10,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='djangorestframework-deepserializer',
-    version='0.1.1',
+    version='0.1.2',
     packages=['djangorestframework_deepserializer'],
     install_requires=[
         'Django',
