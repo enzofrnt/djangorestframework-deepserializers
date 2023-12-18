@@ -5,7 +5,7 @@ A unique viewset for all your need of deep read and deep write, made easy
 from rest_framework.utils import model_meta
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
-from .deep_serializers import DeepSerializer
+from .serializers import DeepSerializer
 
 
 ###################################################################################################
