@@ -1,0 +1,6 @@
+Metadata-Version: 2.1
+Name: deep-serializer-for-django
+Version: 0.1
+License-File: LICENSE
+Requires-Dist: Django
+Requires-Dist: djangorestframework
