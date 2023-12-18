@@ -5,11 +5,15 @@ This model is used to create the package
 from setuptools import setup, find_packages
 
 setup(
-    name='deep_serializer_for_django',
+    name='djangorestframework-deepserializer',
     version='0.1',
     packages=find_packages(),
     install_requires=[
         'Django',
         'djangorestframework',
     ],
+    description='A package to create deep serializer for django rest framework',
+    long_description=open('README.md').read(),
+    author='Horou and Enzo_frnt',
+    url='https://github.com/Horou/djangorestframework-deepserializer'
 )

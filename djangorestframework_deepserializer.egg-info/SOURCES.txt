@@ -1,0 +1,10 @@
+LICENSE
+setup.py
+deep_serializer_for_django/__init__.py
+deep_serializer_for_django/deep_serializers.py
+deep_serializer_for_django/deep_views.py
+djangorestframework_deepserializer.egg-info/PKG-INFO
+djangorestframework_deepserializer.egg-info/SOURCES.txt
+djangorestframework_deepserializer.egg-info/dependency_links.txt
+djangorestframework_deepserializer.egg-info/requires.txt
+djangorestframework_deepserializer.egg-info/top_level.txt

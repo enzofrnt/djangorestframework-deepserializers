@@ -1,3 +1,5 @@
 
 **/deepSerializerforDjango.egg-info/
 **/build/
+**/dist/
+**/deep_serializer_for_django.egg-info/
