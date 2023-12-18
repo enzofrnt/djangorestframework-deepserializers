@@ -225,7 +225,7 @@ class DeepSerializer(serializers.ModelSerializer):
             if instances is not None:
                 self.instance = instances.get(pk, None)
             else:
-                self.Meta.model.objects.filter(pk=pk).first()
+                self.instance = self.Meta.model.objects.filter(pk=pk).first()
         self.initial_data, self.partial = data, bool(self.instance)
         if self.is_valid():
             return self.save().pk, OrderedDict(self.data, **nested)
