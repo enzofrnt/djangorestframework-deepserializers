@@ -1,6 +1,0 @@
-[FORMAT]
-max-line-length = 120
-disable=no-member
-
-[MESSAGES CONTROL]
-disable=protected-access
