@@ -22,6 +22,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
     _viewsets = {}
     _mode = "Read"
     depth = 0
+    exclude_nesteds = []
 
     def __init_subclass__(cls, **kwargs):
         """
@@ -98,7 +99,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         serializer = self.get_serializer_class()
         serializer.Meta.depth = int(params.get("depth", self.depth))
         serializer.prefetch_related = serializer.to_prefetch_related(
-            excludes=params.get("exclude", "").split(","))
+            excludes=params.get("exclude", ",".join(self.exclude_nesteds)).split(","))
         queryset = self.queryset.prefetch_related(*serializer.prefetch_related)
         if filter_by := {
             field: value
