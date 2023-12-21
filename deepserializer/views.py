@@ -21,6 +21,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
     """
     _viewsets = {}
     _mode = "Read"
+    depth = 0
 
     def __init_subclass__(cls, **kwargs):
         """
@@ -36,10 +37,6 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
                 field_name[2:]
                 for field_name in cls.build_filter_fields(model, [model])
             ]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.depth = 0
 
     @classmethod
     def build_filter_fields(cls, parent_model, exclude_models: list) -> list[str]:
@@ -148,7 +145,6 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
                 """
                 _mode = mode
                 queryset = _model.objects
-                depth = 0
 
             CommonViewSet.__name__ = _model.__name__
             CommonViewSet.__doc__ = f"""
