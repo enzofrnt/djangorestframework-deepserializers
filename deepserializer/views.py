@@ -31,7 +31,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         -> all the possible fields to 'filter by' or 'order by' the queryset
         """
         super().__init_subclass__(**kwargs)
-        if cls.queryset:
+        if hasattr(cls, 'queryset') and cls.queryset is not None:
             model = cls.queryset.model
             cls._viewsets[cls._mode + model.__name__] = cls
             cls._possible_fields = [
@@ -98,7 +98,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         params = self.request.query_params
         serializer = self.get_serializer_class()
         serializer.Meta.depth = int(params.get("depth", self.depth))
-        serializer.prefetch_related = serializer.to_prefetch_related(
+        serializer.prefetch_related = serializer.get_prefetch_related(
             excludes=params.get("exclude", ",".join(self.exclude_nesteds)).split(","))
         queryset = self.queryset.prefetch_related(*serializer.prefetch_related)
         if filter_by := {
