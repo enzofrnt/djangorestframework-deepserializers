@@ -45,7 +45,7 @@ class DeepSerializer(serializers.ModelSerializer):
             cls._any_to_one = dict(cls.build_one_to_one_models(model),
                                    **cls.build_many_to_one_models(model))
             cls._relationships = cls.build_relationship_models(model)
-            cls._prefetch_related = cls.build_prefetch_related(model)
+            cls._prefetch_related = cls.build_prefetch_related(model, [model])
             cls.prefetch_related = cls.get_prefetch_related()
             cls.Meta.read_only_fields += tuple(
                 model_meta.get_field_info(model).reverse_relations)
@@ -79,7 +79,7 @@ class DeepSerializer(serializers.ModelSerializer):
             )
             for field_relation in model._meta.get_fields()
             if field_relation.one_to_many
-               and field_relation.related_name
+            and field_relation.related_name
         }
 
     @classmethod
@@ -116,31 +116,23 @@ class DeepSerializer(serializers.ModelSerializer):
             field_relation.name: field_relation.related_model
             for field_relation in model._meta.get_fields()
             if field_relation.related_model
-               and (not field_relation.one_to_many
-                    or field_relation.related_name)
+            and (not field_relation.one_to_many
+                 or field_relation.related_name)
         }
 
     @classmethod
-    def build_prefetch_related(cls, parent_model: Model) -> list[str]:
+    def build_prefetch_related(cls, parent_model: Model, excludes: list[Model]) -> list[str]:
         """
         Create the prefetch_related list,
         With all the prefetch from the nested model at maximum depth
         """
-
-        def _build(_model, _excludes):
-            prefetch_related = []
-            for field_name, model in cls.build_relationship_models(_model).items():
-                if model not in _excludes:
-                    current_prefetch = f"__{field_name}"
-                    prefetch_related.append(current_prefetch)
-                    for prefetch in _build(model, _excludes + [model]):
-                        prefetch_related.append(current_prefetch + prefetch)
-            return prefetch_related
-
-        return [
-            prefetch[2:]
-            for prefetch in _build(parent_model, [parent_model])
-        ]
+        prefetch_related = []
+        for field_name, model in cls.build_relationship_models(parent_model).items():
+            if model not in excludes:
+                prefetch_related.append(field_name)
+                for prefetch in cls.build_prefetch_related(model, excludes + [model]):
+                    prefetch_related.append(f"{field_name}__{prefetch}")
+        return prefetch_related
 
     @classmethod
     def get_prefetch_related(cls, excludes: list[str] = []) -> list[str]:
@@ -221,24 +213,27 @@ class DeepSerializer(serializers.ModelSerializer):
         for field_name, model in self._many_to_many.items():
             if isinstance(field_data := data.get(field_name, None), list):
                 serializer = self.get_serializer(model, mode="Nested")(context=self.context)
-                if result := serializer.deep_travels(field_data):
+                if result := serializer.deep_list_travel(field_data):
                     data[field_name], nested[field_name] = map(list, zip(*result))
-        create_later = {
-            field_name: (model, reverse_name, data.pop(field_name))
-            for field_name, (model, reverse_name) in self._one_to_many.items()
-            if isinstance(data.get(field_name, None), list)
-        }
-        pk, representation = self.update_or_create(data, nested)
+        create_later = {}
+        for field_name, (model, reverse_name) in self._one_to_many.items():
+            if isinstance(field_data := data.pop(field_name, None), list):
+                create_later[field_name] = (model, reverse_name, field_data)
+        pk, representation = self.update_or_create(data, nested=nested)
         for field_name, (model, reverse_name, field_data) in create_later.items():
             for dict_data in field_data:
                 if isinstance(dict_data, dict):
                     dict_data[reverse_name] = pk
             serializer = self.get_serializer(model, mode="Nested")(context=self.context)
-            if result := serializer.deep_travels(field_data):
+            if result := serializer.deep_list_travel(field_data):
                 _, representation[field_name] = map(list, zip(*result))
+                if any(f"ERROR" in item for item in representation[field_name]):
+                    if "ERROR" not in representation:
+                        representation["ERROR"] = {}
+                    representation["ERROR"][field_name] = [f"Failed to serialize nested object"]
         return pk, representation
 
-    def deep_travels(self, datas: list[any]) -> list[tuple[str, dict]]:
+    def deep_list_travel(self, datas: list[any]) -> list[tuple[str, dict]]:
         """
         Recursively travel through a list of model to create the nested models first.
         Override it to change bulk_update_or_create into something else like bulk_get_or_create
@@ -246,61 +241,63 @@ class DeepSerializer(serializers.ModelSerializer):
         data_list: A list of dict to create or update
         return: List of tuple of the created instance primary key and its data representation
         """
-        all_data_and_nested = [(data, {}) for data in datas]
+        data_and_nested = [(data, {}) for data in datas]
+        datas_to_process = [data for data in data_and_nested if isinstance(data[0], dict)]
 
         for field_name, model in self._any_to_one.items():
             filtered_data_and_nested, field_datas = [], []
-            for data, nested in all_data_and_nested:
-                if isinstance(data, dict):
-                    field_data = data.get(field_name, None)
-                    if isinstance(field_data, dict):
-                        filtered_data_and_nested.append((data, nested))
-                        field_datas.append(field_data)
+            for data, nested in datas_to_process:
+                if isinstance(field_data := data.get(field_name, None), dict):
+                    filtered_data_and_nested.append((data, nested))
+                    field_datas.append(field_data)
             if filtered_data_and_nested:
                 serializer = self.get_serializer(model, mode="Nested")(context=self.context)
-                results = serializer.deep_travels(field_datas)
+                results = serializer.deep_list_travel(field_datas)
                 for (data, nested), result in zip(filtered_data_and_nested, results):
                     data[field_name], nested[field_name] = result
 
         for field_name, model in self._many_to_many.items():
             filtered_data_and_nested, field_datas = [], []
-            for data, nested in all_data_and_nested:
-                if isinstance(data, dict):
-                    field_data = data.get(field_name, None)
-                    if isinstance(field_data, list) and (length := len(field_data)) > 0:
+            for data, nested in datas_to_process:
+                if isinstance(field_data := data.get(field_name, None), list):
+                    if (length := len(field_data)) > 0:
                         filtered_data_and_nested.append((data, nested, length))
                         field_datas += field_data
             if filtered_data_and_nested:
                 serializer = self.get_serializer(model, mode="Nested")(context=self.context)
-                results = serializer.deep_travels(field_datas)
+                results = serializer.deep_list_travel(field_datas)
                 for data, nested, length in filtered_data_and_nested:
                     data[field_name], nested[field_name] = map(list, zip(*results[:length]))
                     results = results[length:]
 
-        create_later = {}
+        process_later = {}
         for field_name, (model, reverse_name) in self._one_to_many.items():
-            filtered_info = []
-            for index, (data, _) in enumerate(all_data_and_nested):
-                if isinstance(data, dict):
-                    field_data = data.pop(field_name, None)
-                    if isinstance(field_data, list) and (length := len(field_data)) > 0:
-                        filtered_info.append((index, length, field_data))
-            if filtered_info:
-                create_later[field_name] = (model, reverse_name, filtered_info)
+            filtered_data_information = []
+            for index, (data, nested) in enumerate(data_and_nested):
+                if isinstance(data, dict) and isinstance(field := data.pop(field_name, 0), list):
+                    if (length := len(field)) > 0:
+                        filtered_data_information.append((index, length, field))
+            if filtered_data_information:
+                process_later[field_name] = (model, reverse_name, filtered_data_information)
 
-        pk_and_representation = self.bulk_update_or_create(all_data_and_nested)
+        pk_and_representation = self.bulk_update_or_create(data_and_nested)
 
-        for field_name, (model, reverse_name, filtered_info) in create_later.items():
+        for field_name, (model, reverse_name, filtered_data_information) in process_later.items():
             field_datas = []
-            for index, _, field_data in filtered_info:
+            for index, length, field_data in filtered_data_information:
                 for data in field_data:
                     data[reverse_name] = pk_and_representation[index][0]
                     field_datas.append(data)
             serializer = self.get_serializer(model, mode="Nested")(context=self.context)
-            results = serializer.deep_travels(field_datas)
-            for index, length, _ in filtered_info:
-                _, pk_and_representation[index][1][field_name] = map(list, zip(*results[:length]))
+            results = serializer.deep_list_travel(field_datas)
+            for index, length, field_data in filtered_data_information:
+                pk, representation = pk_and_representation[index]
+                _, representation[field_name] = map(list, zip(*results[:length]))
                 results = results[length:]
+                if any(f"ERROR" in item for item in representation[field_name]):
+                    if "ERROR" not in representation:
+                        representation["ERROR"] = {}
+                    representation["ERROR"][field_name] = [f"Failed to serialize nested object"]
 
         return pk_and_representation
 
@@ -367,7 +364,7 @@ class DeepSerializer(serializers.ModelSerializer):
                         del self._data, self._validated_data
                 pks_and_representations.append(created[found_pk])
             else:
-                pks_and_representations.append((data, data))
+                pks_and_representations.append((data, nested))
         return pks_and_representations
 
     def deep_create(self, data: dict | list, verbose: bool = True, model: any = None
@@ -397,8 +394,7 @@ class DeepSerializer(serializers.ModelSerializer):
                         raise ValidationError(representation)
                     return representation if verbose else primary_key
                 elif data and isinstance(data, list):
-                    primary_key, representation = map(list,
-                                                      zip(*serializer.deep_travels(data)))
+                    primary_key, representation = map(list, zip(*serializer.deep_list_travel(data)))
                     if errors := [d for d in representation if "ERROR" in d]:
                         raise ValidationError(errors)
                     return representation if verbose else primary_key
