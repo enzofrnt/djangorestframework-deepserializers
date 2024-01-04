@@ -21,6 +21,7 @@ class DeepSerializer(serializers.ModelSerializer):
     A unique serializer for all your need of deep read and deep write, made easy
     """
     _serializers = {}
+    _pk_error = "Failed to Serialize"
 
     def __init_subclass__(cls, **kwargs):
         """
@@ -35,11 +36,11 @@ class DeepSerializer(serializers.ModelSerializer):
         super().__init_subclass__(**kwargs)
         if hasattr(cls, "Meta"):
             model = cls.Meta.model
-            if not hasattr(cls.Meta, "mode"):
-                cls.Meta.mode = ""
+            if not hasattr(cls.Meta, "use_case"):
+                cls.Meta.use_case = ""
             if not hasattr(cls.Meta, "read_only_fields"):
                 cls.Meta.read_only_fields = tuple()
-            cls._serializers[cls.Meta.mode + model.__name__] = cls
+            cls._serializers[cls.Meta.use_case + model.__name__] = cls
             cls._many_to_many = cls.build_many_to_many_models(model)
             cls._one_to_many = cls.build_one_to_many_models(model)
             cls._any_to_one = dict(cls.build_one_to_one_models(model),
@@ -188,7 +189,7 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         serializer = self.get_serializer(
             relation_info.related_model,
-            mode=f"Read{self.Meta.model.__name__}Nested"
+            use_case=f"Read{self.Meta.model.__name__}Nested"
         )
         serializer.prefetch_related = self.get_nested_prefetch_related(field_name)
         serializer.Meta.depth = nested_depth - 1
@@ -208,11 +209,11 @@ class DeepSerializer(serializers.ModelSerializer):
         nested = {}
         for field_name, model in self._any_to_one.items():
             if isinstance(field_data := data.get(field_name, None), dict):
-                serializer = self.get_serializer(model, mode="Nested")(context=self.context)
+                serializer = self.get_serializer(model, use_case="Nested")(context=self.context)
                 data[field_name], nested[field_name] = serializer.deep_dict_travel(field_data)
         for field_name, model in self._many_to_many.items():
             if isinstance(field_data := data.get(field_name, None), list):
-                serializer = self.get_serializer(model, mode="Nested")(context=self.context)
+                serializer = self.get_serializer(model, use_case="Nested")(context=self.context)
                 if result := serializer.deep_list_travel(field_data):
                     data[field_name], nested[field_name] = map(list, zip(*result))
         create_later = {}
@@ -224,13 +225,12 @@ class DeepSerializer(serializers.ModelSerializer):
             for dict_data in field_data:
                 if isinstance(dict_data, dict):
                     dict_data[reverse_name] = pk
-            serializer = self.get_serializer(model, mode="Nested")(context=self.context)
+            serializer = self.get_serializer(model, use_case="Nested")(context=self.context)
             if result := serializer.deep_list_travel(field_data):
                 _, representation[field_name] = map(list, zip(*result))
                 if any(f"ERROR" in item for item in representation[field_name]):
                     if "ERROR" not in representation:
-                        representation["ERROR"] = {}
-                    representation["ERROR"][field_name] = [f"Failed to serialize nested object"]
+                        representation["ERROR"] = "Failed to Serialize nested objects"
         return pk, representation
 
     def deep_list_travel(self, datas: list[any]) -> list[tuple[str, dict]]:
@@ -251,7 +251,7 @@ class DeepSerializer(serializers.ModelSerializer):
                     filtered_data_and_nested.append((data, nested))
                     field_datas.append(field_data)
             if filtered_data_and_nested:
-                serializer = self.get_serializer(model, mode="Nested")(context=self.context)
+                serializer = self.get_serializer(model, use_case="Nested")(context=self.context)
                 results = serializer.deep_list_travel(field_datas)
                 for (data, nested), result in zip(filtered_data_and_nested, results):
                     data[field_name], nested[field_name] = result
@@ -264,7 +264,7 @@ class DeepSerializer(serializers.ModelSerializer):
                         filtered_data_and_nested.append((data, nested, length))
                         field_datas += field_data
             if filtered_data_and_nested:
-                serializer = self.get_serializer(model, mode="Nested")(context=self.context)
+                serializer = self.get_serializer(model, use_case="Nested")(context=self.context)
                 results = serializer.deep_list_travel(field_datas)
                 for data, nested, length in filtered_data_and_nested:
                     data[field_name], nested[field_name] = map(list, zip(*results[:length]))
@@ -288,7 +288,7 @@ class DeepSerializer(serializers.ModelSerializer):
                 for data in field_data:
                     data[reverse_name] = pk_and_representation[index][0]
                     field_datas.append(data)
-            serializer = self.get_serializer(model, mode="Nested")(context=self.context)
+            serializer = self.get_serializer(model, use_case="Nested")(context=self.context)
             results = serializer.deep_list_travel(field_datas)
             for index, length, field_data in filtered_data_information:
                 pk, representation = pk_and_representation[index]
@@ -296,8 +296,7 @@ class DeepSerializer(serializers.ModelSerializer):
                 results = results[length:]
                 if any(f"ERROR" in item for item in representation[field_name]):
                     if "ERROR" not in representation:
-                        representation["ERROR"] = {}
-                    representation["ERROR"][field_name] = [f"Failed to serialize nested object"]
+                        representation["ERROR"] = "Failed to Serialize nested objects"
 
         return pk_and_representation
 
@@ -323,8 +322,7 @@ class DeepSerializer(serializers.ModelSerializer):
         self.initial_data, self.partial = data, bool(self.instance)
         if self.is_valid():
             return self.save().pk, OrderedDict(self.data, **nested)
-        return (f"Failed to serialize {self.Meta.model.__name__}",
-                OrderedDict(nested, ERROR=self.errors))
+        return self._pk_error, OrderedDict(ERROR=self._pk_error, **self.errors, **nested)
 
     def bulk_update_or_create(self, data_and_nested: list[tuple[any, dict]]
                               ) -> list[tuple[str, dict]]:
@@ -386,13 +384,13 @@ class DeepSerializer(serializers.ModelSerializer):
             with atomic():
                 serializer = self.get_serializer(
                     model if model else self.Meta.model,
-                    mode="Nested"
+                    use_case="Nested"
                 )(context=self.context)
                 if data and isinstance(data, dict):
                     primary_key, representation = serializer.deep_dict_travel(data)
                     if "ERROR" in representation:
                         raise ValidationError(representation)
-                    return representation if verbose else primary_key
+                    return representation if not verbose else primary_key
                 elif data and isinstance(data, list):
                     primary_key, representation = map(list, zip(*serializer.deep_list_travel(data)))
                     if errors := [d for d in representation if "ERROR" in d]:
@@ -402,20 +400,21 @@ class DeepSerializer(serializers.ModelSerializer):
             return e.detail
 
     @classmethod
-    def get_serializer(cls, model: Model, mode: str = ""):
+    def get_serializer(cls, model: Model, use_case: str = ""):
         """
-        Get back or create a serializer for the _model and its mode.
-        Manually created serializer inheriting DeepViewSet will automatically be used for its mode
+        Get back or create a serializer for the _model and its use case.
+        Manually created serializer inheriting DeepViewSet will automatically be used
+        for its use case.
 
-        If your serializer is only used in a specific use-case, write it in the mode
+        If your serializer is only used in a specific use-case, write it in the use_case
 
-        _model: Contain the model related to the serializer wanted
-        mode: Contain the use that this serializer will be used for,
+        model: Contain the model related to the serializer wanted
+        use_case: Contain the use that this serializer will be used for,
         -> if empty, it will be the main serializer for this model
         """
-        if mode + model.__name__ not in cls._serializers:
-            parent = cls.get_serializer(model) if mode else DeepSerializer
-            _mode, _model = mode, model
+        if use_case + model.__name__ not in cls._serializers:
+            parent = cls.get_serializer(model) if use_case else DeepSerializer
+            _use_case, _model = use_case, model
 
             class CommonSerializer(parent):
                 """
@@ -426,10 +425,10 @@ class DeepSerializer(serializers.ModelSerializer):
                 class Meta:
                     model = _model
                     depth = 0
-                    fields = parent.Meta.fields if _mode else '__all__'
-                    mode = _mode
+                    fields = parent.Meta.fields if _use_case else '__all__'
+                    use_case = _use_case
 
-        return cls._serializers[mode + model.__name__]
+        return cls._serializers[use_case + model.__name__]
 
 ###################################################################################################
 #
