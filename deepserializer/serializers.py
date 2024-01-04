@@ -390,7 +390,7 @@ class DeepSerializer(serializers.ModelSerializer):
                     primary_key, representation = serializer.deep_dict_travel(data)
                     if "ERROR" in representation:
                         raise ValidationError(representation)
-                    return representation if not verbose else primary_key
+                    return representation if verbose else primary_key
                 elif data and isinstance(data, list):
                     primary_key, representation = map(list, zip(*serializer.deep_list_travel(data)))
                     if errors := [d for d in representation if "ERROR" in d]:
