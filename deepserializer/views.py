@@ -20,7 +20,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
     Read only version
     """
     _viewsets = {}
-    _mode = "Read"
+    use_case = "Read"
     depth = 0
     exclude_nesteds = []
 
@@ -33,7 +33,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         super().__init_subclass__(**kwargs)
         if hasattr(cls, 'queryset') and cls.queryset is not None:
             model = cls.queryset.model
-            cls._viewsets[cls._mode + model.__name__] = cls
+            cls._viewsets[cls.use_case + model.__name__] = cls
             cls._possible_fields = [
                 field_name[2:]
                 for field_name in cls.build_filter_fields(model, [model])
@@ -73,10 +73,10 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
 
     def get_serializer_class(self):
         """
-        Get the seralizer class for this viewset and its mode,
-        No mode mean it will get the main serializer for the model
+        Get the seralizer class for this viewset and its use_case,
+        No use_case mean it will get the main serializer for the model
         """
-        return DeepSerializer.get_serializer(self.queryset.model, mode=self._mode)
+        return DeepSerializer.get_serializer(self.queryset.model, use_case=self.use_case)
 
     def get_queryset(self):
         """
@@ -116,18 +116,20 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         return queryset
 
     @classmethod
-    def get_view(cls, _model, mode: str = ""):
+    def get_view(cls, _model, use_case: str = ""):
         """
-        Get back or create a viewset for the _model and its mode.
-        Manually created viewset inheriting DeepViewSet will automatically be used for its mode
+        Get back or create a viewset for the _model and its use_case.
+        Manually created viewset inheriting DeepViewSet will automatically be used for its use_case
 
-        If your viewset is only used in a specific use-case, write it in the mode
+        If your viewset is only used in a specific use-case, write it in the use_case
 
         _model: Contain the model related to the viewset wanted
-        mode: Contain the use that this viewset will be used for,
+        use_case: Contain the use that this viewset will be used for,
             if empty, it will be the main viewset for this model
         """
-        if mode + _model.__name__ not in cls._viewsets:
+        if use_case + _model.__name__ not in cls._viewsets:
+            _use_case = use_case
+
             class CommonViewSet(cls):
                 """
                 For GET request:
@@ -144,17 +146,17 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
                 Separate them with '__' if the model to exclude is in a nested model
                 -> Example: /?exclude=job,user__group,user__comments__status
                 """
-                _mode = mode
+                use_case = _use_case
                 queryset = _model.objects
 
             CommonViewSet.__name__ = _model.__name__
             CommonViewSet.__doc__ = f"""
             View Set for the model: '{_model.__name__}'
-            Used for {mode if mode else 'Read and Write'}
+            Used for {use_case if use_case else 'Read and Write'}
             
             """ + CommonViewSet.__doc__
 
-        return cls._viewsets[mode + _model.__name__]
+        return cls._viewsets[use_case + _model.__name__]
 
 
 class DeepViewSet(ReadOnlyDeepViewSet, ModelViewSet):
@@ -163,7 +165,7 @@ class DeepViewSet(ReadOnlyDeepViewSet, ModelViewSet):
 
     Read and Write version
     """
-    _mode = ""
+    use_case = ""
 
 ###################################################################################################
 #
