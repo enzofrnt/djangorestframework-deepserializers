@@ -228,9 +228,12 @@ class DeepSerializer(serializers.ModelSerializer):
             serializer = self.get_serializer(model, use_case="Nested")(context=self.context)
             if result := serializer.deep_list_travel(field_data):
                 _, representation[field_name] = map(list, zip(*result))
-                if any(f"ERROR" in item for item in representation[field_name]):
-                    if "ERROR" not in representation:
-                        representation["ERROR"] = "Failed to Serialize nested objects"
+        for field_data in representation.copy().values():
+            if "ERROR" not in representation:
+                if isinstance(field_data, dict) and "ERROR" in field_data:
+                    representation["ERROR"] = "Failed to Serialize nested objects"
+                elif isinstance(field_data, list) and any(f"ERROR" in item for item in field_data):
+                    representation["ERROR"] = "Failed to Serialize nested objects"
         return pk, representation
 
     def deep_list_travel(self, datas: list[any]) -> list[tuple[str, dict]]:
@@ -294,8 +297,12 @@ class DeepSerializer(serializers.ModelSerializer):
                 pk, representation = pk_and_representation[index]
                 _, representation[field_name] = map(list, zip(*results[:length]))
                 results = results[length:]
-                if any(f"ERROR" in item for item in representation[field_name]):
-                    if "ERROR" not in representation:
+        for pk, representation in pk_and_representation:
+            for field_data in representation.copy().values():
+                if "ERROR" not in representation:
+                    if isinstance(field_data, dict) and "ERROR" in field_data:
+                        representation["ERROR"] = "Failed to Serialize nested objects"
+                    elif isinstance(field_data, list) and any(f"ERROR" in item for item in field_data):
                         representation["ERROR"] = "Failed to Serialize nested objects"
 
         return pk_and_representation
@@ -353,13 +360,10 @@ class DeepSerializer(serializers.ModelSerializer):
             if isinstance(data, dict):
                 found_pk = data.get(pk_name, None)
                 if found_pk not in created:
-                    created_pk, representation = self.update_or_create(
+                    created_pk, representation = type(self)(context=self.context).update_or_create(
                         data, nested, instances=instances)
                     found_pk = found_pk if found_pk is not None else created_pk
                     created[found_pk] = (created_pk, representation)
-                    self.instance = None
-                    if "ERROR" not in representation:
-                        del self._data, self._validated_data
                 pks_and_representations.append(created[found_pk])
             else:
                 pks_and_representations.append((data, nested))
@@ -391,11 +395,12 @@ class DeepSerializer(serializers.ModelSerializer):
                     if "ERROR" in representation:
                         raise ValidationError(representation)
                     return representation if verbose else primary_key
-                elif data and isinstance(data, list):
+                if data and isinstance(data, list):
                     primary_key, representation = map(list, zip(*serializer.deep_list_travel(data)))
                     if errors := [d for d in representation if "ERROR" in d]:
                         raise ValidationError(errors)
                     return representation if verbose else primary_key
+                return type(data)()
         except ValidationError as e:
             return e.detail
 
