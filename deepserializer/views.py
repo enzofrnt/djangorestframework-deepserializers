@@ -76,7 +76,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         Get the seralizer class for this viewset and its use_case,
         No use_case mean it will get the main serializer for the model
         """
-        return DeepSerializer.get_serializer(self.queryset.model, use_case=self.use_case)
+        return DeepSerializer.get_serializer_class(self.queryset.model, use_case=self.use_case)
 
     def get_queryset(self):
         """
