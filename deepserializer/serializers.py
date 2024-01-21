@@ -1,17 +1,13 @@
 """
 A unique serializer for all your need of deep read and deep write, made easy
 """
-import datetime
 from collections import OrderedDict
 
 from django.db.models import Model
 from django.db.transaction import atomic
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
-from rest_framework.utils import model_meta
 from rest_framework.utils.field_mapping import (get_nested_relation_kwargs, )
-
-from app.models import Route
 
 
 ###################################################################################################
@@ -40,65 +36,33 @@ class DeepSerializer(serializers.ModelSerializer):
         if hasattr(cls, "Meta"):
             if not hasattr(cls.Meta, "use_case"):
                 cls.Meta.use_case = ""
-            if not hasattr(cls.Meta, "read_only_fields"):
-                cls.Meta.read_only_fields = tuple()
             model = cls.Meta.model
+            excludes = [] if cls.Meta.fields == '__all__' else [
+                related_model
+                for field_name, related_model in cls.get_all_relationships(model, []).items()
+                if field_name not in cls.Meta.fields
+            ]
             cls._serializers[cls.Meta.use_case + model.__name__] = cls
-            cls._forward_relationships = cls.get_forward_relationships_models(model, [])
-            cls._reverse_relationships = cls.get_reverse_relationships_models(model, [])
-            cls._relationships_models = cls.get_relationships_models(model, [])
-            cls._prefetch_related = cls.build_prefetch_related(model, [model])
-            cls.prefetch_related = cls.get_prefetch_related()
-            cls.Meta.read_only_fields += tuple(model_meta.get_field_info(model).reverse_relations)
+            cls._prefetch_related = cls.build_prefetch_related(model, excludes)
+            cls._all_relationships = cls.get_all_relationships(model, excludes)
+            cls._forward_relationships = cls.get_forward_relations(model, excludes)
+            cls._reverse_relationships = cls.get_reverse_relations(model, excludes)
+            cls.Meta.read_only_fields = tuple({
+                *cls._reverse_relationships["one"],
+                *cls._reverse_relationships["many"],
+                *(cls.Meta.read_only_fields if hasattr(cls.Meta, "read_only_fields") else [])
+            })
+            cls.prefetch_related = cls.get_prefetch_related(depth=cls.Meta.depth)
+
+    def __init__(self, *args, **kwargs):
+        if (depth := kwargs.pop("depth", None)) is not None:
+            self.Meta.depth = depth
+        if (prefetch_related := kwargs.pop("prefetch_related", None)) is not None:
+            self.prefetch_related = prefetch_related
+        super().__init__(*args, **kwargs)
 
     @classmethod
-    def get_forward_relationships_models(cls,
-                                         model: Model,
-                                         excludes: list[Model]
-                                         ) -> dict[str, dict[str, Model]]:
-        return {
-            "many": {
-                field_relation.name: field_relation.related_model
-                for field_relation in model._meta.get_fields()
-                if (field_relation.many_to_many or field_relation.one_to_many)
-                and not hasattr(field_relation, "field")
-                and field_relation.related_model not in excludes
-            },
-            "one": {
-                field_relation.name: field_relation.related_model
-                for field_relation in model._meta.get_fields()
-                if (field_relation.one_to_one or field_relation.many_to_one)
-                and not hasattr(field_relation, "field")
-                and field_relation.related_model not in excludes
-            }
-        }
-
-    @classmethod
-    def get_reverse_relationships_models(cls,
-                                         model: Model,
-                                         excludes: list[Model]
-                                         ) -> dict[str, dict[str, tuple[Model, str]]]:
-        return {
-            "many": {
-                field_relation.name: (field_relation.related_model, field_relation.field.name)
-                for field_relation in model._meta.get_fields()
-                if (field_relation.many_to_many or field_relation.one_to_many)
-                and hasattr(field_relation, "field")
-                and field_relation.related_name
-                and field_relation.related_model not in excludes
-            },
-            "one": {
-                field_relation.name: (field_relation.related_model, field_relation.field.name)
-                for field_relation in model._meta.get_fields()
-                if (field_relation.one_to_one or field_relation.many_to_one)
-                and hasattr(field_relation, "field")
-                and field_relation.related_name
-                and field_relation.related_model not in excludes
-            }
-        }
-
-    @classmethod
-    def get_relationships_models(cls, model: Model, excludes: list[Model]) -> dict[str, Model]:
+    def get_all_relationships(cls, model: Model, excludes: list[Model]) -> dict[str, Model]:
         """
         Get all the relationships models for a given model.
         With the field name in key and the Model in Value
@@ -112,20 +76,60 @@ class DeepSerializer(serializers.ModelSerializer):
         }
 
     @classmethod
+    def get_forward_relations(cls, model: Model, excludes: list[Model]) -> dict[str, dict[str, Model]]:
+        return {
+            "many": {
+                field_relation.name: field_relation.related_model
+                for field_relation in model._meta.get_fields()
+                if (field_relation.many_to_many or field_relation.one_to_many)
+                and not hasattr(field_relation, "field")
+                and field_relation.related_model not in excludes
+            },
+            "one": {
+                field_relation.name: field_relation.related_model
+                for field_relation in model._meta.get_fields()
+                if (field_relation.one_to_one or field_relation.many_to_one)
+                and not hasattr(field_relation, "field")
+                and field_relation.related_model not in excludes
+            }
+        }
+
+    @classmethod
+    def get_reverse_relations(cls, model: Model, excludes: list[Model]) -> dict[str, dict[str, tuple[Model, str]]]:
+        return {
+            "many": {
+                field_relation.name: (field_relation.related_model, field_relation.field.name)
+                for field_relation in model._meta.get_fields()
+                if (field_relation.many_to_many or field_relation.one_to_many)
+                and hasattr(field_relation, "field")
+                and field_relation.related_name
+                and field_relation.related_model not in excludes
+            },
+            "one": {
+                field_relation.name: (field_relation.related_model, field_relation.field.name)
+                for field_relation in model._meta.get_fields()
+                if (field_relation.one_to_one or field_relation.many_to_one)
+                and hasattr(field_relation, "field")
+                and field_relation.related_name
+                and field_relation.related_model not in excludes
+            }
+        }
+
+    @classmethod
     def build_prefetch_related(cls, parent_model: Model, excludes: list[Model]) -> list[str]:
         """
         Create the prefetch_related list,
         With all the prefetch from the nested model at maximum depth
         """
         prefetch_related = []
-        for field_name, model in cls.get_relationships_models(parent_model, excludes).items():
+        for field_name, model in cls.get_all_relationships(parent_model, excludes).items():
             prefetch_related.append(field_name)
-            for prefetch in cls.build_prefetch_related(model, excludes + [model]):
+            for prefetch in cls.build_prefetch_related(model, excludes + [parent_model]):
                 prefetch_related.append(f"{field_name}__{prefetch}")
         return prefetch_related
 
     @classmethod
-    def get_prefetch_related(cls, excludes: list[str] = []) -> list[str]:
+    def get_prefetch_related(cls, excludes: list[str] = [], depth: int = 0) -> list[str]:
         """
         Get the prefetch_related list for this class, two use case:
         -> queryset.prefetch_related(*self.to_prefetch_related())
@@ -137,7 +141,7 @@ class DeepSerializer(serializers.ModelSerializer):
         return [
             prefetch_related
             for prefetch_related in cls._prefetch_related
-            if len(prefetch_related.split('__')) < cls.Meta.depth + 2
+            if len(prefetch_related.split('__')) < depth + 2
             and not any(
                 prefetch_related.startswith(exclude)
                 for exclude in excludes
@@ -145,8 +149,7 @@ class DeepSerializer(serializers.ModelSerializer):
             )
         ]
 
-    @classmethod
-    def get_nested_prefetch_related(cls, field_name: str) -> list[str]:
+    def get_nested_prefetch_related(self, field_name: str) -> list[str]:
         """
         Used to get the prefetch_related of a nested serializer
 
@@ -154,9 +157,9 @@ class DeepSerializer(serializers.ModelSerializer):
         return: list of prefetch related starting with 'field_name'
         """
         nested_prefetch = []
-        for prefetch in cls.prefetch_related:
+        for prefetch in self.prefetch_related:
             child_prefetch = prefetch.split('__')
-            if 1 < len(child_prefetch) < cls.Meta.depth + 2 and child_prefetch[0] == field_name:
+            if 1 < len(child_prefetch) < self.Meta.depth + 2 and child_prefetch[0] == field_name:
                 nested_prefetch.append("__".join(child_prefetch[1:]))
         return nested_prefetch
 
@@ -176,13 +179,11 @@ class DeepSerializer(serializers.ModelSerializer):
         Has been overriden to enable the safe visualisation of a deeply nested models
         Without circular depth problem
         """
-        serializer = self.get_serializer_class(
-            relation_info.related_model,
-            use_case=f"Read{self.Meta.model.__name__}Nested"
-        )
-        serializer.prefetch_related = self.get_nested_prefetch_related(field_name)
-        serializer.Meta.depth = nested_depth - 1
-        return serializer, get_nested_relation_kwargs(relation_info)
+        serializer = self.get_serializer_class(relation_info.related_model, use_case=f"Deep")
+        nested_relation_kwargs = get_nested_relation_kwargs(relation_info)
+        nested_relation_kwargs["depth"] = nested_depth - 1
+        nested_relation_kwargs["prefetch_related"] = self.get_nested_prefetch_related(field_name)
+        return serializer, nested_relation_kwargs
 
     def _process_forward_relations(self, datas_and_nesteds: list[tuple], delete_models: list[Model]):
 
@@ -193,7 +194,7 @@ class DeepSerializer(serializers.ModelSerializer):
                     filtered_datas_info.append((data, nested))
                     field_datas.append(field_data)
             if filtered_datas_info:
-                serializer = self.get_serializer_class(model, use_case="Nested")(context=self.context)
+                serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
                 for (data, nested), result in zip(filtered_datas_info, serializer.deep_process(field_datas, delete_models)):
                     data[field_name], nested[field_name] = result
 
@@ -205,7 +206,7 @@ class DeepSerializer(serializers.ModelSerializer):
                         filtered_datas_info.append((data, nested, length))
                         field_datas += field_data
             if filtered_datas_info:
-                serializer = self.get_serializer_class(model, use_case="Nested")(context=self.context)
+                serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
                 results = serializer.deep_process(field_datas, delete_models)
                 for data, nested, length in filtered_datas_info:
                     data[field_name], nested[field_name] = map(list, zip(*results[:length]))
@@ -221,7 +222,7 @@ class DeepSerializer(serializers.ModelSerializer):
                     filtered_datas_info.append(index)
                     field_datas.append(field_data)
             if filtered_datas_info:
-                serializer = self.get_serializer_class(model, use_case="Nested")(context=self.context)
+                serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
                 for index, result in zip(filtered_datas_info, serializer.deep_process(field_datas, delete_models)):
                     _, representations[index][field_name] = result
 
@@ -236,7 +237,7 @@ class DeepSerializer(serializers.ModelSerializer):
                         filtered_datas_info.append((index, length))
                         field_datas += field_data
             if filtered_datas_info:
-                serializer = self.get_serializer_class(model, use_case="Nested")(context=self.context)
+                serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
                 results = serializer.deep_process(field_datas, delete_models)
                 for index, length in filtered_datas_info:
                     _, representations[index][field_name] = map(list, zip(*results[:length]))
@@ -253,7 +254,7 @@ class DeepSerializer(serializers.ModelSerializer):
                 ):
                     representation["ERROR"] = "Failed to Serialize nested objects"
                 old_nested = representation.pop("OLD_NESTED", {})
-                for field_name, model in self._relationships_models.items():
+                for field_name, model in self._all_relationships.items():
                     if model in delete_models:
                         field_datas = old_nested.get(field_name, [])
                         old_primary_keys = set(
@@ -272,7 +273,6 @@ class DeepSerializer(serializers.ModelSerializer):
                             to_deletes[field_name][1].update(unused_primary_keys)
         for field_name, (model, primary_keys) in to_deletes.items():
             model.objects.filter(pk__in=primary_keys).delete()
-            print(model, primary_keys)
 
     def deep_process(self, datas: list[any], delete_models: list[Model]) -> list[tuple[any, any]]:
         datas_and_nesteds = [(data, {} if isinstance(data, dict) else data) for data in datas]
@@ -326,8 +326,8 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         pks_and_representations, created = [], {}
         pk_name = self.Meta.model._meta.pk.name
-        instances = self.Meta.model.objects.prefetch_related(*self.get_prefetch_related()).in_bulk(
-            set(
+        instances = self.Meta.model.objects.prefetch_related(
+            *self.get_prefetch_related(depth=self.Meta.depth)).in_bulk(set(
                 data[pk_name]
                 for data, _ in datas_and_nesteds
                 if isinstance(data, dict) and pk_name in data
@@ -343,7 +343,7 @@ class DeepSerializer(serializers.ModelSerializer):
                     else:
                         representation = OrderedDict(representation, **nested, OLD_NESTED={
                             field_name: representation[field_name]
-                            for field_name in self._relationships_models
+                            for field_name in self._all_relationships
                         })
                     found_pk = found_pk if found_pk is not None else pk
                     created[found_pk] = pk, representation
@@ -354,7 +354,7 @@ class DeepSerializer(serializers.ModelSerializer):
 
     def deep_update_or_create(self,
                               model: Model,
-                              data: dict | list,
+                              datas: list[dict],
                               delete_models: list[Model] = [],
                               verbose: bool = True) -> list | None:
         """
@@ -369,27 +369,14 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         try:
             with atomic():
-                if isinstance(data, dict):
-                    data = [data]
-                if data and isinstance(data, list):
-                    print(f"start for {self.Meta.model.__name__}: {datetime.datetime.now()}")
-                    primary_key, representation = map(list, zip(*self.get_serializer_class(
-                        model,
-                        use_case="Nested"
-                    )(context=self.context).deep_process(data, delete_models)))
-                    print(f"end for {self.Meta.model.__name__}: {datetime.datetime.now()}")
-                    if errors := [d for d in representation if "ERROR" in d]:
-                        raise ValidationError(errors)
-                    return representation if verbose else primary_key
-                return None
+                primary_key, representation = map(list, zip(*self.get_serializer_class(
+                    model, use_case="Deep"
+                )(context=self.context).deep_process(datas, delete_models)))
+                if any("ERROR" in data for data in representation if isinstance(data, dict)):
+                    raise ValidationError(representation)
+                return representation if verbose else primary_key
         except ValidationError as e:
             return e.detail
-
-    def deep_create(self, data: dict | list, model: Model = None, verbose: bool = True):
-        return self.deep_update_or_create(model, data, verbose=True, delete_models=[Route])
-
-    def get_serializer(self, model: Model, use_case: str, **kwargs):
-        return self.get_serializer_class(model, use_case=use_case)(context=self.context, **kwargs)
 
     @classmethod
     def get_serializer_class(cls, model: Model, use_case: str = ""):
@@ -420,7 +407,12 @@ class DeepSerializer(serializers.ModelSerializer):
                     fields = '__all__'
                     use_case = _use_case
 
+            CommonSerializer.__name__ = f"{_use_case}{_model.__name__}Serializer"
+
         return cls._serializers[use_case + model.__name__]
+
+    def deep_create(self, data: dict | list, model: Model = None, verbose: bool = True):
+        return self.deep_update_or_create(model, data, verbose=False, delete_models=[])
 
 ###################################################################################################
 #
