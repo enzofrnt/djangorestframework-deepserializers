@@ -1,8 +1,7 @@
 """
 A unique viewset for all your need of deep read and deep write, made easy
 """
-
-from rest_framework.utils import model_meta
+from django.db.models import Model
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
 from .serializers import DeepSerializer
@@ -22,7 +21,6 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
     _viewsets = {}
     use_case = "Read"
     depth = 0
-    exclude_nesteds = []
 
     def __init_subclass__(cls, **kwargs):
         """
@@ -34,31 +32,30 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         if hasattr(cls, 'queryset') and cls.queryset is not None:
             model = cls.queryset.model
             cls._viewsets[cls.use_case + model.__name__] = cls
-            cls._possible_fields = [
-                field_name[2:]
-                for field_name in cls.build_filter_fields(model, [model])
-            ]
+            cls._possible_fields = cls.build_possible_fields(model, [])
 
     @classmethod
-    def build_filter_fields(cls, parent_model, exclude_models: list) -> list[str]:
+    def build_possible_fields(cls, parent_model: Model, excludes: list[Model]) -> list[str]:
         """
         Create the list of all the possible fields for this view,
         Used to check if a string can be used for filtering or ordering a queryset
         """
-        exclude_set = {
-            field_name
-            for field_name in model_meta.get_field_info(parent_model).reverse_relations
-            if field_name.endswith("_set")
+        parent_model_fields = {
+            field_relation.name: field_relation.related_model
+            for field_relation in parent_model._meta.get_fields()
+            if not field_relation.related_model
+            or (
+                (not hasattr(field_relation, "field") or field_relation.related_name)
+                and field_relation.related_model not in excludes
+            )
         }
-        prefetch_related = []
-        for field_relation in parent_model._meta.get_fields():
-            if f"{field_relation.name}_set" not in exclude_set:
-                current_prefetch = f"__{field_relation.name}"
-                prefetch_related.append(current_prefetch)
-                if (model := field_relation.related_model)and model not in exclude_models:
-                    for prefetch in cls.build_filter_fields(model, exclude_models + [model]):
-                        prefetch_related.append(current_prefetch + prefetch)
-        return prefetch_related
+        possible_fields = []
+        for field_name, model in parent_model_fields.items():
+            possible_fields.append(field_name)
+            if model:
+                for prefetch in cls.build_possible_fields(model, excludes + [parent_model]):
+                    possible_fields.append(f"{field_name}__{prefetch}")
+        return possible_fields
 
     @classmethod
     def init_router(cls, router, models: list) -> None:
@@ -70,6 +67,21 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         """
         for model in models:
             router.register(model.__name__, cls.get_view(model), basename=model.__name__)
+
+    def get_serializer(self, *args, **kwargs):
+        """
+        Return the serializer instance that should be used for validating and
+        deserializing input, and for serializing output.
+        """
+        params = self.request.query_params
+        serializer_class = self.get_serializer_class()
+        kwargs.setdefault('context', self.get_serializer_context())
+        kwargs["depth"] = int(params.get("depth", self.depth))
+        kwargs["prefetch_related"] = serializer_class.get_prefetch_related(
+            excludes=params.get("exclude", "").split(","),
+            depth=kwargs["depth"]
+        )
+        return serializer_class(*args, **kwargs)
 
     def get_serializer_class(self):
         """
@@ -97,10 +109,10 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         """
         params = self.request.query_params
         serializer = self.get_serializer_class()
-        serializer.Meta.depth = int(params.get("depth", self.depth))
-        serializer.prefetch_related = serializer.get_prefetch_related(
-            excludes=params.get("exclude", ",".join(self.exclude_nesteds)).split(","))
-        queryset = self.queryset.prefetch_related(*serializer.prefetch_related)
+        queryset = self.queryset.prefetch_related(*serializer.get_prefetch_related(
+            excludes=params.get("exclude", "").split(","),
+            depth=int(params.get("depth", self.depth))
+        ))
         if filter_by := {
             field: value
             for field, value in params.items()
