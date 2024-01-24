@@ -18,7 +18,7 @@ Here’s a basic example of how to use djangorestframework-deepserializer:
 
 If you just want to have a API for your model:
 urls.py:
-'''
+```
 from deepserializer import DeepViewSet
 from myapp.models import User, Group, Tag
 
@@ -28,12 +28,12 @@ DeepViewSet.init_router(router, [
     Group,
     Tag
 ])
-'''
+```
 It will create the corresponding serializer and viewsets, you can also make it read_only  by importing ReadOnlyDeepViewSet instead of DeepViewSet
 
 If you want to do a deep serialization:
 urls.py:
-'''
+```
 from deepserializer import DeepViewSet
 from myapp.models import User, Group, Tag
 
@@ -46,7 +46,7 @@ class DeepUserViewSet(DeepViewSet):
         if any("ERROR" in item for item in results if isinstance(item, dict)):
             return Response(results, status=status.HTTP_409_CONFLICT)
         return Response(results, status=status.HTTP_201_CREATED)
-'''
+```
 The viewset will automaticaly create a serializer if this one doesn't exist
 
 If you want to do a deep serialization that will also delete the previews unused nested objects:
