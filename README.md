@@ -32,7 +32,7 @@ DeepViewSet.init_router(router, [
 It will create the corresponding serializer and viewsets, you can also make it read_only  by importing ReadOnlyDeepViewSet instead of DeepViewSet
 
 If you want to do a deep serialization:
-urls.py:
+views.py:
 ```
 from deepserializer import DeepViewSet
 from myapp.models import User, Group, Tag
@@ -50,8 +50,8 @@ class DeepUserViewSet(DeepViewSet):
 The viewset will automaticaly create a serializer if this one doesn't exist
 
 If you want to do a deep serialization that will also delete the previews unused nested objects:
-urls.py:
-'''
+views.py:
+```
 from deepserializer import DeepViewSet
 from myapp.models import User, Group, Tag, Alias
 
@@ -63,7 +63,7 @@ class ReplaceAliasDeepUserViewSet(DeepViewSet):
         if any("ERROR" in item for item in results if isinstance(item, dict)):
             return Response(results, status=status.HTTP_409_CONFLICT)
         return Response(results, status=status.HTTP_201_CREATED)
-'''
+```
 
 The DeepViewSet retrieve the corresponding serializer with get_serializer_class() by using the use_case of the viewset and the queryset model.
 With no use_case defined, it will retrieve the default serializer for this model.
