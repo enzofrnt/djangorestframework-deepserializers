@@ -10,6 +10,7 @@ You can install `djangorestframework-deepserializer` using pip:
 
 ```bash
 pip install djangorestframework-deepserializer
+```
 
 Usage
 After installing the package, you can use it to create deep serializers for your Django models. This will allow you to serialize your models along with all their related models, providing a comprehensive view of your data.
