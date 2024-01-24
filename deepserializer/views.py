@@ -35,26 +35,21 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
             cls._possible_fields = cls.build_possible_fields(model, [])
 
     @classmethod
-    def build_possible_fields(cls, parent_model: Model, excludes: list[Model]) -> list[str]:
+    def build_possible_fields(cls, parent_model: Model, excludes: list[Model]) -> set[str]:
         """
         Create the list of all the possible fields for this view,
         Used to check if a string can be used for filtering or ordering a queryset
         """
-        parent_model_fields = {
-            field_relation.name: field_relation.related_model
-            for field_relation in parent_model._meta.get_fields()
-            if not field_relation.related_model
-            or (
-                (not hasattr(field_relation, "field") or field_relation.related_name)
-                and field_relation.related_model not in excludes
-            )
-        }
-        possible_fields = []
-        for field_name, model in parent_model_fields.items():
-            possible_fields.append(field_name)
-            if model:
-                for prefetch in cls.build_possible_fields(model, excludes + [parent_model]):
-                    possible_fields.append(f"{field_name}__{prefetch}")
+        possible_fields = set()
+        for field_relation in parent_model._meta.get_fields():
+            if (model := field_relation.related_model) not in excludes:
+                field_name = field_relation.name
+                possible_fields.add(field_name)
+                if model:
+                    possible_fields.update((
+                        f"{field_name}__{field}"
+                        for field in cls.build_possible_fields(model, excludes + [parent_model])
+                    ))
         return possible_fields
 
     @classmethod
@@ -76,12 +71,16 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         params = self.request.query_params
         serializer_class = self.get_serializer_class()
         kwargs.setdefault('context', self.get_serializer_context())
-        kwargs["depth"] = int(params.get("depth", self.depth))
-        kwargs["prefetch_related"] = serializer_class.get_prefetch_related(
-            excludes=params.get("exclude", "").split(","),
-            depth=kwargs["depth"]
+        depth = int(params.get("depth", self.depth))
+        return serializer_class(
+            *args,
+            depth=depth,
+            relations_paths=serializer_class.get_relations_paths(
+                excludes=params.get("exclude", "").split(","),
+                depth=depth
+            ),
+            **kwargs
         )
-        return serializer_class(*args, **kwargs)
 
     def get_serializer_class(self):
         """
@@ -108,11 +107,8 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         -> Example: /?exclude=job,user__group,user__comments__status
         """
         params = self.request.query_params
-        serializer = self.get_serializer_class()
-        queryset = self.queryset.prefetch_related(*serializer.get_prefetch_related(
-            excludes=params.get("exclude", "").split(","),
-            depth=int(params.get("depth", self.depth))
-        ))
+        serializer = self.get_serializer()
+        queryset = serializer.optimize_queryset(self.queryset)
         if filter_by := {
             field: value
             for field, value in params.items()
