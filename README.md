@@ -16,9 +16,11 @@ After installing the package, you can use it to create deep serializers for your
 
 Here’s a basic example of how to use djangorestframework-deepserializer:
 
-If you just want to have a API for your model:
-urls.py:
-```
+# Creating an API for your model
+If you just want to have an API for your model, you can use the following code in your urls.py:
+
+```Python
+
 from deepserializer import DeepViewSet
 from myapp.models import User, Group, Tag
 
@@ -29,11 +31,13 @@ DeepViewSet.init_router(router, [
     Tag
 ])
 ```
-It will create the corresponding serializer and viewsets, you can also make it read_only  by importing ReadOnlyDeepViewSet instead of DeepViewSet
+This will create the corresponding serializer and viewsets. If you want to make it read-only, you can import ReadOnlyDeepViewSet instead of DeepViewSet.
 
-If you want to do a deep serialization:
-views.py:
-```
+# Deep Serialization
+If you want to do a deep serialization, you can use the following code in your views.py:
+
+```Python
+
 from deepserializer import DeepViewSet
 from myapp.models import User, Group, Tag
 
@@ -47,11 +51,12 @@ class DeepUserViewSet(DeepViewSet):
             return Response(results, status=status.HTTP_409_CONFLICT)
         return Response(results, status=status.HTTP_201_CREATED)
 ```
-The viewset will automaticaly create a serializer if this one doesn't exist
+The DeepViewSet will automatically create a serializer if one doesn’t exist.
 
-If you want to do a deep serialization that will also delete the previews unused nested objects:
-views.py:
-```
+If you want to do a deep serialization that will also delete the previous unused nested objects, you can use the following code in your views.py:
+
+```Python
+
 from deepserializer import DeepViewSet
 from myapp.models import User, Group, Tag, Alias
 
@@ -64,11 +69,13 @@ class ReplaceAliasDeepUserViewSet(DeepViewSet):
             return Response(results, status=status.HTTP_409_CONFLICT)
         return Response(results, status=status.HTTP_201_CREATED)
 ```
+The DeepViewSet retrieves the corresponding serializer with get_serializer_class() by using the use_case of the viewset and the queryset model. With no use_case defined, it will retrieve the default serializer for this model.
 
-The DeepViewSet retrieve the corresponding serializer with get_serializer_class() by using the use_case of the viewset and the queryset model.
-With no use_case defined, it will retrieve the default serializer for this model.
+# Creating a Serializer
 
-Python
+You can also create a serializer manually. Here’s an example:
+
+```Python
 
 from deepserializer import DeepSerializer
 from myapp.models import MyModel
@@ -77,21 +84,22 @@ class MyModelSerializer(DeepSerializer):
     class Meta:
         model = MyModel
         fields = '__all__'
-
+```
 In this example, MyModelSerializer will serialize instances of MyModel along with all related models.
 
-Deep Serialization
+## Deep Serialization
 
 Deep serialization is the process of serializing a model along with all its related models. This is done recursively, meaning that the related models of the related models are also serialized, and so on. This allows you to get a complete view of your data in a single serialized object.
 
-The types of relationships that are supported include:
+# The types of relationships that are supported include:
 
 one_to_one: One instance of a model is related to one instance of another model.
 one_to_many: One instance of a model is related to many instances of another model.
 many_to_one: Many instances of a model are related to one instance of another model.
 many_to_many: Many instances of a model are related to many instances of another model.
 
-and in reverse with:
+# And in reverse with:
+
 related_name: The name to use for the relation from the related object back to this one.
 
 ## Contributing
