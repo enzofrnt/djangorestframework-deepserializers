@@ -48,7 +48,7 @@ class DeepSerializer(serializers.ModelSerializer):
                 for field_relation in model._meta.get_fields()
                 if field_relation.related_model and field_relation.name not in cls.Meta.fields
             ]
-            cls._serializers[cls.Meta.use_case + model.__name__] = cls
+            cls._serializers[cls.Meta.use_case + model.__name__ + "Serializer"] = cls
             selects, prefetches, prefetches_selects = cls.build_selects_and_prefetches(model, excludes)
             cls._selects_related, cls._prefetches_related = selects, sorted(prefetches + [
                 f"{prefetch_path}__{select_path}"
@@ -64,6 +64,7 @@ class DeepSerializer(serializers.ModelSerializer):
                 **{field_name: model for field_name, (model, _) in reverse_one.items()},
                 **{field_name: model for field_name, (model, _) in reverse_many.items()}
             }
+            cls._original_depth = cls.Meta.depth
             cls.Meta.read_only_fields = tuple({
                 *(cls.Meta.read_only_fields if hasattr(cls.Meta, "read_only_fields") else []),
                 *reverse_one,
@@ -80,9 +81,8 @@ class DeepSerializer(serializers.ModelSerializer):
             *args: Arbitrary positional arguments.
             **kwargs: Arbitrary keyword arguments.
         """
-        if (depth := kwargs.pop("depth", None)) is not None:
-            self.Meta.depth = depth
-        self.relations_paths = set(kwargs.pop("relations_paths", self.get_relations_paths()))
+        self.Meta.depth = kwargs.pop("depth", self._original_depth)
+        self.relations_paths = set(kwargs.pop("relations_paths", self.get_relationships_paths()))
         super().__init__(*args, **kwargs)
 
     @classmethod
@@ -158,34 +158,38 @@ class DeepSerializer(serializers.ModelSerializer):
                         prefetches_with_selects[f"{field_name}__{path}"] = prefetch_model_and_selects
         return selects_related, prefetches_related, prefetches_with_selects
 
-    def optimize_queryset(self, queryset):
+    @classmethod
+    def optimize_queryset(cls, queryset, depth: int, relations_paths: set[str]):
         """
         Optimize a queryset by selecting related paths and prefetching related objects.
 
-        This method takes a queryset, and optimizes it by selecting related paths and prefetching related objects based on the serializer's metadata and the queryset's relationships. It builds a list of select paths and a list of prefetch paths, and then applies these to the queryset using the select_related and prefetch_related methods.
+        This method takes a queryset, and optimizes it by selecting related paths and prefetching related objects based on the serializer's metadata and the queryset's relationships.
+        It builds a list of select paths and a list of prefetch paths, and then applies these to the queryset using the select_related and prefetch_related methods.
 
         Args:
             queryset: The queryset to be optimized.
+            depth (int): The depth of relationships to consider for optimization.
+            relations_paths (set[str]): The set of relationship paths to consider for optimization.
 
         Returns:
             The optimized queryset with related paths selected and related objects prefetched.
         """
-        if self.Meta.depth > 0 and (selects := [
+        if depth > 0 and (selects := [
             select_path
-            for select_path in self._selects_related
-            if select_path in self.relations_paths
+            for select_path in cls._selects_related
+            if select_path in relations_paths
         ]):
             queryset = queryset.select_related(*selects)
         if prefetches := [
             prefetch_path
-            for prefetch_path in self._prefetches_related
-            if prefetch_path in self.relations_paths
+            for prefetch_path in cls._prefetches_related
+            if prefetch_path in relations_paths
         ]:
             queryset = queryset.prefetch_related(*prefetches)
         return queryset
 
     @classmethod
-    def get_relations_paths(cls, excludes: list[str] = [], depth: int = 0) -> list[str]:
+    def get_relationships_paths(cls, excludes: list[str] = [], depth: int = 0) -> list[str]:
         """
         Get a list of relations paths.
 
@@ -228,7 +232,11 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         Get a list of default field names.
 
-        This method takes a list of declared fields and a model info object, and returns a list of default field names based on the primary key name, the declared fields, the fields of the model info, and the prefetch_related paths.
+        This method takes a list of declared fields and a model info object, and returns a list of default field names based on:
+         - the primary key name.
+         - the declared fields.
+         - the fields of the model info.
+         - the fields name present in relations_paths for this model.
 
         Args:
             declared_fields (list): The list of declared fields.
@@ -238,10 +246,10 @@ class DeepSerializer(serializers.ModelSerializer):
             list[str]: A list of default field names.
         """
         return (
-                [model_info.pk.name] +
-                list(declared_fields) +
-                list(model_info.fields) +
-                list(field for field in self.relations_paths if '__' not in field)
+            [model_info.pk.name] +
+            list(declared_fields) +
+            list(model_info.fields) +
+            list(field for field in self.relations_paths if '__' not in field)
         )
 
     def build_nested_field(self, field_name: str, relation_info, nested_depth: int) -> tuple:
@@ -264,48 +272,65 @@ class DeepSerializer(serializers.ModelSerializer):
         nested_relation_kwargs["relations_paths"] = self.get_nested_relations_paths(field_name)
         return serializer, nested_relation_kwargs
 
-    def _process_forward_relations(self, datas_and_nesteds: list[tuple], delete_models: list[Model]):
+    def _process_forward_one_relationships(self, datas_and_nesteds: list[tuple], delete_models: list[Model]):
         """
-        Process forward relationships of a model.
+        Process the one_to_one and many_to_one relationship's models for the serializer model.
 
-        This method takes a list of data and nested tuples and a list of models to delete, and processes the forward relationships of the model based on these inputs.
+        This method takes a list of data and nested tuples and a list of models to delete.
+        It regroups all nested data of one model and launches _deep_process with the correct serializer for this model.
+        It then updates the model fields in datas and nesteds with the primary_keys and representations returned by _deep_process.
 
         Args:
             datas_and_nesteds (list[tuple]): The list of data and nested tuples.
             delete_models (list[Model]): The list of models to delete.
         """
         for field_name, model in self._forward_one_relationships.items():
-            filtered_datas_info, field_datas = [], []
-            for data, nested in datas_and_nesteds:
-                if isinstance(data, dict) and isinstance(field_data := data.get(field_name, None), dict):
-                    filtered_datas_info.append((data, nested))
-                    field_datas.append(field_data)
-            if filtered_datas_info:
-                serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
-                results = serializer._deep_process(field_datas, delete_models)
-                for (data, nested), result in zip(filtered_datas_info, results):
-                    data[field_name], nested[field_name] = result
+            if field_name in self.relations_paths:
+                filtered_datas_info, field_datas = [], []
+                for data, nested in datas_and_nesteds:
+                    if isinstance(data, dict) and isinstance(field_data := data.get(field_name, None), dict):
+                        filtered_datas_info.append((data, nested))
+                        field_datas.append(field_data)
+                if filtered_datas_info:
+                    serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
+                    results = serializer._deep_process(field_datas, delete_models)
+                    for (data, nested), result in zip(filtered_datas_info, results):
+                        data[field_name], nested[field_name] = result
 
-        for field_name, model in self._forward_many_relationships.items():
-            filtered_datas_info, field_datas = [], []
-            for data, nested in datas_and_nesteds:
-                if isinstance(data, dict) and isinstance(field_data := data.get(field_name, None), list):
-                    if (length := len(field_data)) > 0:
-                        filtered_datas_info.append((data, nested, length))
-                        field_datas += field_data
-            if filtered_datas_info:
-                serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
-                results = serializer._deep_process(field_datas, delete_models)
-                for data, nested, length in filtered_datas_info:
-                    data[field_name], nested[field_name] = map(list, zip(*results[:length]))
-                    results = results[length:]
-
-    def _process_reverse_relations(self, datas: list, primary_keys: list, representations: list[dict],
-                                   delete_models: list[Model]):
+    def _process_forward_many_relationships(self, datas_and_nesteds: list[tuple], delete_models: list[Model]):
         """
-        Process reverse relationships of a model.
+        Process the many_to_many and one_to_many relationship's models for the serializer model.
 
-        This method takes a list of data, a list of primary keys, a list of representations, and a list of models to delete, and processes the reverse relationships of the model based on these inputs.
+        This method takes a list of data and nested tuples and a list of models to delete.
+        It regroups all nested data of one model and launches _deep_process with the correct serializer for this model.
+        It then updates the model fields in datas and nesteds with the primary_keys and representations returned by _deep_process.
+
+        Args:
+            datas_and_nesteds (list[tuple]): The list of data and nested tuples.
+            delete_models (list[Model]): The list of models to delete.
+        """
+        for field_name, model in self._forward_many_relationships.items():
+            if field_name in self.relations_paths:
+                filtered_datas_info, field_datas = [], []
+                for data, nested in datas_and_nesteds:
+                    if isinstance(data, dict) and isinstance(field_data := data.get(field_name, None), list):
+                        if (length := len(field_data)) > 0:
+                            filtered_datas_info.append((data, nested, length))
+                            field_datas += field_data
+                if filtered_datas_info:
+                    serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
+                    results = serializer._deep_process(field_datas, delete_models)
+                    for data, nested, length in filtered_datas_info:
+                        data[field_name], nested[field_name] = map(list, zip(*results[:length]))
+                        results = results[length:]
+
+    def _process_reverse_one_relationships(self, datas: list, primary_keys: list, representations: list[dict], delete_models: list[Model]):
+        """
+        Process the reverse one_to_one and many_to_one relationship's model for the serializer model.
+
+        This method takes a list of data, a list of primary keys, a list of representations, and a list of models to delete.
+        It regroups all nested data of one model, update the reverse field name with the primary_key of the parent and launches _deep_process with the correct serializer for this model.
+        It then replaces the dicts in representations with the representations returned by _deep_process.
 
         Args:
             datas (list): The list of data.
@@ -314,34 +339,50 @@ class DeepSerializer(serializers.ModelSerializer):
             delete_models (list[Model]): The list of models to delete.
         """
         for field_name, (model, reverse_name) in self._reverse_one_relationships.items():
-            filtered_datas_info, field_datas = [], []
-            for index, data in enumerate(datas):
-                if isinstance(data, dict) and isinstance(field_data := data.get(field_name, None), dict):
-                    field_data[reverse_name] = primary_keys[index]
-                    filtered_datas_info.append(index)
-                    field_datas.append(field_data)
-            if filtered_datas_info:
-                serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
-                results = serializer._deep_process(field_datas, delete_models)
-                for index, result in zip(filtered_datas_info, results):
-                    _, representations[index][field_name] = result
+            if field_name in self.relations_paths:
+                filtered_datas_info, field_datas = [], []
+                for index, data in enumerate(datas):
+                    if isinstance(data, dict) and isinstance(field_data := data.get(field_name, None), dict):
+                        field_data[reverse_name] = primary_keys[index]
+                        filtered_datas_info.append(index)
+                        field_datas.append(field_data)
+                if filtered_datas_info:
+                    serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
+                    results = serializer._deep_process(field_datas, delete_models)
+                    for index, result in zip(filtered_datas_info, results):
+                        _, representations[index][field_name] = result
 
+    def _process_reverse_many_relationships(self, datas: list, primary_keys: list, representations: list[dict], delete_models: list[Model]):
+        """
+        Process the reverse many_to_many and one_to_many relationship's model for the serializer model.
+
+        This method takes a list of data, a list of primary keys, a list of representations, and a list of models to delete.
+        It regroups all nested data of one model, update the reverse field name with the primary_key of the parent and launches _deep_process with the correct serializer for this model.
+        It then replaces the dicts in representations with the representations returned by _deep_process.
+
+        Args:
+            datas (list): The list of data.
+            primary_keys (list): The list of primary keys.
+            representations (list): The list of representations.
+            delete_models (list[Model]): The list of models to delete.
+        """
         for field_name, (model, reverse_name) in self._reverse_many_relationships.items():
-            filtered_datas_info, field_datas = [], []
-            for index, data in enumerate(datas):
-                if isinstance(data, dict) and isinstance(field_data := data.get(field_name, None), list):
-                    if (length := len(field_data)) > 0:
-                        for item in field_data:
-                            if isinstance(item, dict):
-                                item[reverse_name] = primary_keys[index]
-                        filtered_datas_info.append((index, length))
-                        field_datas += field_data
-            if filtered_datas_info:
-                serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
-                results = serializer._deep_process(field_datas, delete_models)
-                for index, length in filtered_datas_info:
-                    _, representations[index][field_name] = map(list, zip(*results[:length]))
-                    results = results[length:]
+            if field_name in self.relations_paths:
+                filtered_datas_info, field_datas = [], []
+                for index, data in enumerate(datas):
+                    if isinstance(data, dict) and isinstance(field_data := data.get(field_name, None), list):
+                        if (length := len(field_data)) > 0:
+                            for item in field_data:
+                                if isinstance(item, dict):
+                                    item[reverse_name] = primary_keys[index]
+                            filtered_datas_info.append((index, length))
+                            field_datas += field_data
+                if filtered_datas_info:
+                    serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
+                    results = serializer._deep_process(field_datas, delete_models)
+                    for index, length in filtered_datas_info:
+                        _, representations[index][field_name] = map(list, zip(*results[:length]))
+                        results = results[length:]
 
     def _clean_datas_representation(self, representations: list, delete_models: list[Model]):
         """
@@ -400,10 +441,12 @@ class DeepSerializer(serializers.ModelSerializer):
             list[tuple[any, any]]: A list of tuples, where each tuple contains a primary key and a data representation.
         """
         datas_and_nesteds = [(data, {} if isinstance(data, dict) else data) for data in datas]
-        self._process_forward_relations(datas_and_nesteds, delete_models)
+        self._process_forward_one_relationships(datas_and_nesteds, delete_models)
+        self._process_forward_many_relationships(datas_and_nesteds, delete_models)
         pks_and_representations = self.bulk_update_or_create(datas_and_nesteds)
         pks, representations = map(list, zip(*pks_and_representations))
-        self._process_reverse_relations(datas, pks, representations, delete_models)
+        self._process_reverse_one_relationships(datas, pks, representations, delete_models)
+        self._process_reverse_many_relationships(datas, pks, representations, delete_models)
         self._clean_datas_representation(representations, delete_models)
         return pks_and_representations
 
@@ -411,11 +454,12 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         Update or create an instance with data, based on the model's primary key.
 
-        This method takes a dictionary of data and an optional dictionary of instances, and updates or creates an instance based on these inputs. If the instances dictionary is not provided, the method will make a database request to get the instance if it exists.
+        This method takes a dictionary of data and an optional dictionary of instances, and updates or creates an instance based on these inputs.
+        If the instances dictionary is not provided, the method will make a database request to get the instance if it exists.
 
         Args:
             data (dict): The dictionary that contains the data to be created or updated.
-            instances (dict[any, Model], optional): Contains all possible instances for the data to update. If instances is None, will make a database request to get back the instance if it exists.
+            instances (dict[any, Model], optional): Contains all possible instances for the data to update.
 
         Returns:
             tuple[any, dict]: A tuple containing a primary key and a data representation.
@@ -448,7 +492,7 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         pks_and_representations, created = [], {}
         pk_name = self.Meta.model._meta.pk.name
-        instances = self.optimize_queryset(self.Meta.model.objects).in_bulk(set(
+        instances = self.optimize_queryset(self.Meta.model.objects, self.Meta.depth, self.relations_paths).in_bulk(set(
             data[pk_name]
             for data, _ in datas_and_nesteds
             if isinstance(data, dict) and pk_name in data
@@ -480,8 +524,9 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         Create or update multiple instances with their nested instances at any depth based on the data in datas.
 
-        This method takes a model, a list of data, a list of models to delete, and a verbosity flag, and creates a list of models or a unique model with their nested models at any depth based on these inputs.
-        If the resulting data is too big to be sent back, 'verbose'=False is used to only send the primary key of the created model.
+        This method takes a model, a list of data, a list of models to delete, and a verbosity flag.
+        It then creates a list of models or a unique model with their nested models at any depth based on these inputs.
+        If the resulting data is too big to be sent back, verbose=False is used to only send the primary key of the created model.
         If there have been errors, it will send the dictionary with the errors regardless of verbose.
 
         Args:
@@ -504,7 +549,7 @@ class DeepSerializer(serializers.ModelSerializer):
             return e.detail
 
     @classmethod
-    def get_serializer_class(cls, model: Model, use_case: str = ""):
+    def get_serializer_class(cls, model: Model, depth: int = 0, fields: str | tuple = '__all__', use_case: str = ""):
         """
         Retrieve or create a serializer for the given model and its use case.
 
@@ -515,31 +560,28 @@ class DeepSerializer(serializers.ModelSerializer):
         If the serializer does not exist, a new one is created. The new serializer inherits from either the DeepSerializer or the main model serializer, and includes a Meta class with the model, a depth of 0, all fields, and the use case.
 
         Args:
-            model (Model): The model for which to get the serializer.
+            model (Model): The model of the serializer.
+            depth (int, optional): The depth of the serializer. Defaults to 0.
+            fields (str | tuple, optional): All the fields for this serializer. Defaults to '__all__'.
             use_case (str, optional): The use case for which the serializer will be used. If empty, the main serializer for this model will be used. Defaults to "".
 
         Returns:
             ModelSerializer: The serializer for the model and use case.
         """
-        if use_case + model.__name__ not in cls._serializers:
-            parent = cls.get_serializer_class(model) if use_case else DeepSerializer
-            _use_case, _model = use_case, model
+        serializer_name = f"{use_case}{model.__name__}Serializer"
+        if serializer_name not in cls._serializers:
+            _model, _depth, _fields, _use_case = model, depth, fields, use_case
 
-            class CommonSerializer(parent):
+            class CommonSerializer(DeepSerializer):
                 class Meta:
                     model = _model
-                    depth = 0
-                    fields = '__all__'
+                    depth = _depth
+                    fields = _fields
                     use_case = _use_case
 
-        return cls._serializers[use_case + model.__name__]
+            CommonSerializer.__name__ = serializer_name
 
-    def deep_create(self, data: dict | list, model: Model = None, verbose: bool = True):
-        return self.deep_update_or_create(model, data, verbose=True, delete_models=[])
-
-    @classmethod
-    def get_serializer(cls, model: Model, use_case: str = ""):
-        return cls.get_serializer_class(model, use_case)
+        return cls._serializers[serializer_name]
 
 ###################################################################################################
 #
