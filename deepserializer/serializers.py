@@ -4,7 +4,7 @@ A unique serializer for all your need of deep read and deep write, made easy
 import re
 from collections import OrderedDict
 
-from django.db.models import Model
+from django.db.models import Model, Prefetch
 from django.db.transaction import atomic
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
@@ -49,12 +49,15 @@ class DeepSerializer(serializers.ModelSerializer):
                 if field_relation.related_model and field_relation.name not in cls.Meta.fields
             ]
             cls._serializers[cls.Meta.use_case + model.__name__ + "Serializer"] = cls
-            selects, prefetches, prefetches_selects = cls.build_selects_and_prefetches(model, excludes)
-            cls._selects_related, cls._prefetches_related = selects, sorted(prefetches + [
+            selects_and_prefetches = cls.build_selects_and_prefetches(model, excludes)
+            cls._selects_related = select_related = selects_and_prefetches[0]
+            cls._prefetches_related = prefetch_related = selects_and_prefetches[1]
+            cls._prefetches_related_with_selects = prefetches_related_with_selects = selects_and_prefetches[2]
+            cls._all_path_related = sorted(set(select_related + prefetch_related + [
                 f"{prefetch_path}__{select_path}"
-                for prefetch_path, (_, selects) in prefetches_selects.items()
-                for select_path in selects
-            ])
+                for prefetch_path, (_, prefetch_selects) in prefetches_related_with_selects.items()
+                for select_path in prefetch_selects
+            ]))
             forward_one, forward_many, reverse_one, reverse_many = cls.build_relationships(model, excludes)
             cls._forward_one_relationships, cls._forward_many_relationships = forward_one, forward_many
             cls._reverse_one_relationships, cls._reverse_many_relationships = reverse_one, reverse_many
@@ -64,7 +67,7 @@ class DeepSerializer(serializers.ModelSerializer):
                 **{field_name: model for field_name, (model, _) in reverse_one.items()},
                 **{field_name: model for field_name, (model, _) in reverse_many.items()}
             }
-            cls._original_depth = cls.Meta.depth
+            cls.Meta.original_depth = cls.Meta.depth
             cls.Meta.read_only_fields = tuple({
                 *(cls.Meta.read_only_fields if hasattr(cls.Meta, "read_only_fields") else []),
                 *reverse_one,
@@ -81,7 +84,7 @@ class DeepSerializer(serializers.ModelSerializer):
             *args: Arbitrary positional arguments.
             **kwargs: Arbitrary keyword arguments.
         """
-        self.Meta.depth = kwargs.pop("depth", self._original_depth)
+        self.Meta.depth = kwargs.pop("depth", self.Meta.original_depth)
         self.relations_paths = set(kwargs.pop("relations_paths", self.get_relationships_paths()))
         super().__init__(*args, **kwargs)
 
@@ -126,16 +129,17 @@ class DeepSerializer(serializers.ModelSerializer):
             cls, parent_model: Model, excludes: list[Model]
     ) -> tuple[list[str], list[str], dict[str, tuple[Model, list[str]]]]:
         """
-        Build a list of select_related paths for a model.
+        Generates paths for select_related and prefetch_related queries based on a model's relationships.
 
-        This method takes a parent model and a list of models to exclude, and returns a list of select_related paths for all relationships of the parent model that are not in the exclude list.
-
-        Args:
-            parent_model (Model): The parent model for which to build the select_related paths.
-            excludes (list[Model]): The list of models to exclude.
+        Parameters:
+            parent_model (Model): The model whose relationships are to be analyzed.
+            excludes (list[Model]): Models to be omitted from the path generation.
 
         Returns:
-            list[str]: A list of select_related paths.
+            tuple: Contains three lists:
+                - list[str]: Paths for select_related queries.
+                - list[str]: Paths for prefetch_related queries.
+                - dict[str, tuple[Model, list[str]]]: Mapping of prefetch_related paths to tuples of related model and its select_related paths.
         """
         selects_related, prefetches_related, prefetches_with_selects = [], [], {}
         for field_relation in parent_model._meta.get_fields():
@@ -174,18 +178,31 @@ class DeepSerializer(serializers.ModelSerializer):
         Returns:
             The optimized queryset with related paths selected and related objects prefetched.
         """
-        if depth > 0 and (selects := [
+        selects = [
             select_path
             for select_path in cls._selects_related
             if select_path in relations_paths
-        ]):
-            queryset = queryset.select_related(*selects)
-        if prefetches := [
-            prefetch_path
+        ]
+        prefetches = OrderedDict(
+            (prefetch_path, prefetch_path)
             for prefetch_path in cls._prefetches_related
             if prefetch_path in relations_paths
-        ]:
-            queryset = queryset.prefetch_related(*prefetches)
+        )
+        for prefetch_path, (model, prefetch_selects) in cls._prefetches_related_with_selects.items():
+            filtered_prefetch_selects = [
+                select_path
+                for select_path in prefetch_selects
+                if f"{prefetch_path}__{select_path}" in relations_paths
+            ]
+            if filtered_prefetch_selects and prefetch_path in prefetches:
+                prefetches[prefetch_path] = Prefetch(
+                    prefetch_path,
+                    queryset=model.objects.select_related(*filtered_prefetch_selects)
+                )
+        if depth > 0 and selects:
+            queryset = queryset.select_related(*selects)
+        if prefetches:
+            queryset = queryset.prefetch_related(*prefetches.values())
         return queryset
 
     @classmethod
@@ -204,7 +221,7 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         return [
             path
-            for path in cls._selects_related + cls._prefetches_related
+            for path in cls._all_path_related
             if len(re.findall("__", path)) < depth + 1
             and not any(path.startswith(exclude) for exclude in excludes if exclude)
         ]
