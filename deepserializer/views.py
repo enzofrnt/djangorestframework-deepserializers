@@ -86,7 +86,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         params = self.request.query_params
         serializer_class = self.get_serializer_class()
         kwargs.setdefault('context', self.get_serializer_context())
-        depth = int(params.get("depth", serializer_class._original_depth))
+        depth = int(params.get("depth", serializer_class.Meta.original_depth))
         return serializer_class(
             *args,
             depth=depth,
@@ -122,7 +122,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         """
         params = self.request.query_params
         serializer_class = self.get_serializer_class()
-        depth = int(params.get("depth", serializer_class._original_depth))
+        depth = int(params.get("depth", serializer_class.Meta.original_depth))
         queryset = serializer_class.optimize_queryset(
             self.queryset,
             depth,
@@ -172,7 +172,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
             CommonViewSet.__doc__ = f"""
             Generated ViewSet for the model: '{model.__name__}'
             Used for {use_case if use_case else 'Read and Write'}
-            
+
             """ + ReadOnlyDeepViewSet.get_queryset.__doc__
 
         return cls._viewsets[viewset_name]
