@@ -132,12 +132,12 @@ class BookViewSets(DeepViewSet):
 
     def get_serializer_class(self):
         if hasattr(self, 'action') and self.action == 'list':
-            # return DeepSerializer.get_serializer(self.queryset.model, use_case="NoInfo")  # will do the same thing, importing it this way will protect against circular import
+            # return DeepSerializer.get_serializer_class(self.queryset.model, use_case="NoInfo")  # will do the same thing, importing it this way will protect against circular import
             return NoInfoBookSerializer
-        return NoInfoBookSerializer.get_serializer(self.queryset.model) # this will retrieve BookSerializer without having to manually import it
+        return NoInfoBookSerializer.get_serializer_class(self.queryset.model) # this will retrieve BookSerializer without having to manually import it
 ```
 This viewsets will use two different serializer depending on the current action.
-`get_serializer` function will get a defined serializer if it exists or create a new one for the given model and use_case if not.
+`get_serializer_class` function will get a defined serializer if it exists or create a new one for the given model and use_case if not.
 
 ### For deep serialization of nested Model.
 If you have a dict of list of ...., and you want to create it in one request, you can:
