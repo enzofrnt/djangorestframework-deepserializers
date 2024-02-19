@@ -205,6 +205,12 @@ The optional parameter are:
     - If `verbose=False` it will return a list of primary_keys, in this case it will return `["My Book"]`.
 - `delete_models`: List of all the model to delete the previously linked instances not present in the `request.data`
 
+The `update` or `create` in the `deep_update_or_create` function are based on the primary key of the dict:
+- With primary key:  The function will search for this data in the database:
+    - If the key exist: it will update this instance with the given data (the update will be with `partial=True`), but only one time. If other dict are found with this primary key for this model, the updating process will be skipped.
+    - If the key does not exist: It will create a new instance of this model with the given data, but only one time. If other dict are found with this primary key for this model, the creation process will be skipped.
+- Without primary key: The function will not search for this data in the database and will directly create it.
+
 If a validation error occurred during the creation process it will return the representations, regardless of `verbose`, with only the problematic fields + a new `ERROR` field, even for the models
 
 ### The types of relationships that are supported include:
