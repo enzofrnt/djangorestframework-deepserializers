@@ -24,6 +24,10 @@ If you just want to have an API ready for your model.
 ```Python
 from django.db import models
 
+class Image(models.Model):
+    id = models.IntegerField(primary_key=True, editable=False)
+    url = models.CharField(max_length=200)
+
 class Tag(models.Model):
     name = models.CharField(primary_key=True)
     description = models.TextField(max_length=4000)
@@ -33,6 +37,7 @@ class Book(models.Model):
     title = models.CharField(primary_key=True)
     description = models.TextField(max_length=4000)
     tags = models.ManyToManyField(Tag)
+    cover = models.ForeignKey(Image, on_delete=models.CASCADE, blank=True, null=True, related_name="books")
 
 
 class Chapter(models.Model):
@@ -205,13 +210,53 @@ The optional parameter are:
     - If `verbose=False` it will return a list of primary_keys, in this case it will return `["My Book"]`.
 - `delete_models`: List of all the model to delete the previously linked instances not present in the `request.data`
 
+If a validation error occurred during the creation process it will return the representations, regardless of `verbose`, with only the problematic fields + a new `ERROR` field, even for the models
+
 The `update` or `create` in the `deep_update_or_create` function are based on the primary key of the dict:
 - With primary key:  The function will search for this data in the database:
     - If the key exist: it will update this instance with the given data (the update will be with `partial=True`), but only one time. If other dict are found with this primary key for this model, the updating process will be skipped.
     - If the key does not exist: It will create a new instance of this model with the given data, but only one time. If other dict are found with this primary key for this model, the creation process will be skipped.
 - Without primary key: The function will not search for this data in the database and will directly create it.
 
-If a validation error occurred during the creation process it will return the representations, regardless of `verbose`, with only the problematic fields + a new `ERROR` field, even for the models
+With this you can do things like this:
+```JSON
+[
+  {
+    "title": "My Book",
+    "description": "My first try to write something",
+    "tags": [
+      {
+        "name": "action",
+        "description": "battles!!!!!"
+      },
+      "adventure"
+    ],
+    "chapters": [],
+    "cover": {
+      "id": -1,
+      "url": "http://example.com/000000"
+    },
+  },
+  {
+    "title": "My Book 2",
+    "description": "My second try to write something",
+    "tags": [
+      {
+        "name": "action",
+        "description": "battles!!!!!"
+      }
+    ],
+    "chapters": [],
+    "cover": {
+      "id": -1,
+      "url": "http://example.com/000000"
+    },
+  }
+]
+```
+In the case that `action` and `-1` do not exist in the database:
+The `action` Tag will be created only one time and will be linked to both `My Book` and `My Book 2`,
+And the `-1` Image will be created one time with the new primary key `42` (for example) and be linked to both `My Book` and `My Book 2`.
 
 ### The types of relationships that are supported include:
 
