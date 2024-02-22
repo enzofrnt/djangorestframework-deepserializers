@@ -516,7 +516,7 @@ class DeepSerializer(serializers.ModelSerializer):
         ))
         for data, nested in datas_and_nesteds:
             if isinstance(data, dict):
-                found_pk = data.get(pk_name, "success")
+                found_pk = data.get(pk_name, None)
                 if found_pk not in created:
                     pk, representation = type(self)(context=self.context).update_or_create(data, instances=instances)
                     if pk == self._pk_error:
