@@ -49,7 +49,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         """
         possible_fields = set()
         for field_relation in parent_model._meta.get_fields():
-            if (model: field_relation.related_model) not in excludes:
+            if (model := field_relation.related_model) not in excludes:
                 field_name = field_relation.name
                 possible_fields.add(field_name)
                 if model:
