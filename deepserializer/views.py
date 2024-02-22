@@ -1,7 +1,6 @@
 """
 A unique viewset for all your need of deep read and deep write, made easy
 """
-from django.apps import apps
 from django.db.models import Model
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
@@ -50,9 +49,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         """
         possible_fields = set()
         for field_relation in parent_model._meta.get_fields():
-            app_label, tmp_model = parent_model._meta.app_label, field_relation.related_model
-            model = apps.get_model(app_label, tmp_model) if isinstance(tmp_model, str) else tmp_model
-            if model not in excludes:
+            if (model: field_relation.related_model) not in excludes:
                 field_name = field_relation.name
                 possible_fields.add(field_name)
                 if model:
