@@ -536,7 +536,7 @@ class DeepSerializer(serializers.ModelSerializer):
                 if found_pk not in created:
                     pk, representation = type(self)(
                         context=self.context,
-                        depth=self.Meta.depth,
+                        depth=0,
                         relations_paths=self.relations_paths
                     ).update_or_create(data, instances=instances)
                     if pk == self._pk_error:
@@ -579,8 +579,7 @@ class DeepSerializer(serializers.ModelSerializer):
             with atomic():
                 serializer = self.get_serializer_class(model, use_case="Deep")(
                     context=self.context,
-                    depth=self.Meta.depth,
-                    relations_paths=self.relations_paths
+                    depth=10
                 )
                 primary_key, representation = map(list, zip(*serializer._deep_process(datas, delete_models)))
                 if any("ERROR" in data for data in representation if isinstance(data, dict)):
