@@ -83,19 +83,22 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         Returns:
             Serializer: The serializer instance.
         """
-        params = self.request.query_params
-        serializer_class = self.get_serializer_class()
-        kwargs.setdefault('context', self.get_serializer_context())
-        depth = int(params.get("depth", serializer_class.Meta.original_depth))
-        return serializer_class(
-            *args,
-            depth=depth,
-            relations_paths=serializer_class.get_relationships_paths(
-                excludes=params.get("exclude", "").split(","),
-                depth=depth
-            ),
-            **kwargs
-        )
+        if self.request :
+            params = self.request.query_params
+            serializer_class = self.get_serializer_class()
+            kwargs.setdefault('context', self.get_serializer_context())
+            depth = int(params.get("depth", serializer_class.Meta.original_depth))
+            return serializer_class(
+                *args,
+                depth=depth,
+                relations_paths=serializer_class.get_relationships_paths(
+                    excludes=params.get("exclude", "").split(","),
+                    depth=depth
+                ),
+                **kwargs
+            )
+        else :
+            return super().get_serializer(*args, **kwargs)
 
     def get_serializer_class(self):
         """
