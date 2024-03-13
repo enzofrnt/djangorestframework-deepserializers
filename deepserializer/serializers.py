@@ -309,7 +309,11 @@ class DeepSerializer(serializers.ModelSerializer):
                         filtered_datas_info.append((data, nested))
                         field_datas.append(field_data)
                 if filtered_datas_info:
-                    serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
+                    serializer = self.get_serializer_class(model, use_case="Deep")(
+                        context=self.context,
+                        depth=self.Meta.depth - 1,
+                        relations_paths=self.get_nested_relations_paths(field_name)
+                    )
                     results = serializer._deep_process(field_datas, delete_models)
                     for (data, nested), result in zip(filtered_datas_info, results):
                         data[field_name], nested[field_name] = result
@@ -335,7 +339,11 @@ class DeepSerializer(serializers.ModelSerializer):
                             filtered_datas_info.append((data, nested, length))
                             field_datas += field_data
                 if filtered_datas_info:
-                    serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
+                    serializer = self.get_serializer_class(model, use_case="Deep")(
+                        context=self.context,
+                        depth=self.Meta.depth - 1,
+                        relations_paths=self.get_nested_relations_paths(field_name)
+                    )
                     results = serializer._deep_process(field_datas, delete_models)
                     for data, nested, length in filtered_datas_info:
                         data[field_name], nested[field_name] = map(list, zip(*results[:length]))
@@ -364,7 +372,11 @@ class DeepSerializer(serializers.ModelSerializer):
                         filtered_datas_info.append(index)
                         field_datas.append(field_data)
                 if filtered_datas_info:
-                    serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
+                    serializer = self.get_serializer_class(model, use_case="Deep")(
+                        context=self.context,
+                        depth=self.Meta.depth - 1,
+                        relations_paths=self.get_nested_relations_paths(field_name)
+                    )
                     results = serializer._deep_process(field_datas, delete_models)
                     for index, result in zip(filtered_datas_info, results):
                         _, representations[index][field_name] = result
@@ -395,7 +407,11 @@ class DeepSerializer(serializers.ModelSerializer):
                             filtered_datas_info.append((index, length))
                             field_datas += field_data
                 if filtered_datas_info:
-                    serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
+                    serializer = self.get_serializer_class(model, use_case="Deep")(
+                        context=self.context,
+                        depth=self.Meta.depth - 1,
+                        relations_paths=self.get_nested_relations_paths(field_name)
+                    )
                     results = serializer._deep_process(field_datas, delete_models)
                     for index, length in filtered_datas_info:
                         _, representations[index][field_name] = map(list, zip(*results[:length]))
@@ -518,7 +534,11 @@ class DeepSerializer(serializers.ModelSerializer):
             if isinstance(data, dict):
                 found_pk = data.get(pk_name, None)
                 if found_pk not in created:
-                    pk, representation = type(self)(context=self.context).update_or_create(data, instances=instances)
+                    pk, representation = type(self)(
+                        context=self.context,
+                        depth=self.Meta.depth,
+                        relations_paths=self.relations_paths
+                    ).update_or_create(data, instances=instances)
                     if pk == self._pk_error:
                         representation = OrderedDict(representation, **nested, ERROR=self._pk_error)
                     else:
@@ -557,7 +577,11 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         try:
             with atomic():
-                serializer = self.get_serializer_class(model, use_case="Deep")(context=self.context)
+                serializer = self.get_serializer_class(model, use_case="Deep")(
+                    context=self.context,
+                    depth=self.Meta.depth,
+                    relations_paths=self.relations_paths
+                )
                 primary_key, representation = map(list, zip(*serializer._deep_process(datas, delete_models)))
                 if any("ERROR" in data for data in representation if isinstance(data, dict)):
                     raise ValidationError(representation)
