@@ -1,10 +1,10 @@
 # DeepSerializer
 
-Easiest Django REST framework addon to complete a django rest framework api in less than 1 day
+Another Django REST framework addon for those who don't have time.
 
 ## Introduction
 
-`djangorestframework-deepserializer` is a Django REST framework package that provides deep serialization of nested JSON. It supports various types of relationships including `one_to_one`, `one_to_many`, `many_to_one`, `many_to_many`, and also in reverse through their `related_name`. This package is particularly useful if you really don't want to work.
+`djangorestframework-deepserializer` is a Django REST framework package that provides deep serialization of nested JSON. It supports various types of relationships including `one_to_one`, `one_to_many`, `many_to_one`, `many_to_many`, and also in reverse through their `related_name`. All the database calls are already optimized to the maximum using prefetch_related, select_related and some powerful algo without losing any DRF functionality.This package is particularly useful if you really don't want to work.
 This projects presume that you already have some or all your django models completed.
 
 ## Installation
