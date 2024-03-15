@@ -31,6 +31,11 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         super().__init_subclass__(**kwargs)
         if hasattr(cls, 'queryset') and cls.queryset is not None:
             model = cls.queryset.model
+            if cls.serializer_class is None:
+                cls.serializer_class = DeepSerializer.get_serializer_class(
+                    model,
+                    use_case=cls.use_case
+                )
             cls._viewsets[cls.use_case + model.__name__ + "ViewSet"] = cls
             cls._possible_fields = cls.build_possible_fields(model, [])
 
@@ -99,16 +104,6 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
             )
         else :
             return super().get_serializer(*args, **kwargs)
-
-    def get_serializer_class(self):
-        """
-        Retrieves the serializer class for this viewset and its use case.
-        If no use case is specified, it retrieves the main serializer for the model.
-
-        Returns:
-            Serializer: The serializer class.
-        """
-        return DeepSerializer.get_serializer_class(self.queryset.model, use_case=self.use_case)
 
     def get_queryset(self):
         """
