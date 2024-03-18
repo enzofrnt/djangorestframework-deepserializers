@@ -222,8 +222,9 @@ class DeepSerializer(serializers.ModelSerializer):
         return [
             path
             for path in cls._all_path_related
-            if len(re.findall("__", path)) < depth + 1
-               and not any(path.startswith(exclude) for exclude in excludes if exclude)
+            if len(re.findall("__", path)) < depth + 1 and not any(
+                path.startswith(exclude) for exclude in excludes if exclude
+            )
         ]
 
     def get_nested_relations_paths(self, field_name: str) -> list[str]:
@@ -294,8 +295,8 @@ class DeepSerializer(serializers.ModelSerializer):
         Process the one_to_one and many_to_one relationship's models for the serializer model.
 
         This method takes a list of data and nested tuples and a list of models to delete.
-        It regroups all nested data of one model and launches _deep_process with the correct serializer for this model.
-        It then updates the model fields in datas and nesteds with the primary_keys and representations returned by _deep_process.
+        It regroups all nested data of one model and launches deep_process with the correct serializer for this model.
+        It then updates the model fields in datas and nesteds with the primary_keys and representations returned by deep_process.
 
         Args:
             datas_and_nesteds (list[tuple]): The list of data and nested tuples.
@@ -305,11 +306,12 @@ class DeepSerializer(serializers.ModelSerializer):
             if field_name in self.relations_paths:
                 filtered_datas_info, field_datas = [], []
                 for data, nested in datas_and_nesteds:
-                    if isinstance(data, dict) and isinstance(field_data := data.get(field_name, None), dict):
+                    field_data = data.get(field_name, None)
+                    if field_data and isinstance(field_data, dict):
                         filtered_datas_info.append((data, nested))
                         field_datas.append(field_data)
                 if filtered_datas_info:
-                    results = self.fields[field_name]._deep_process(field_datas, delete_models)
+                    results = self.fields[field_name].deep_process(field_datas, delete_models)
                     for (data, nested), result in zip(filtered_datas_info, results):
                         data[field_name], nested[field_name] = result
 
@@ -318,8 +320,8 @@ class DeepSerializer(serializers.ModelSerializer):
         Process the many_to_many and one_to_many relationship's models for the serializer model.
 
         This method takes a list of data and nested tuples and a list of models to delete.
-        It regroups all nested data of one model and launches _deep_process with the correct serializer for this model.
-        It then updates the model fields in datas and nesteds with the primary_keys and representations returned by _deep_process.
+        It regroups all nested data of one model and launches deep_process with the correct serializer for this model.
+        It then updates the model fields in datas and nesteds with the primary_keys and representations returned by deep_process.
 
         Args:
             datas_and_nesteds (list[tuple]): The list of data and nested tuples.
@@ -329,119 +331,177 @@ class DeepSerializer(serializers.ModelSerializer):
             if field_name in self.relations_paths:
                 filtered_datas_info, field_datas = [], []
                 for data, nested in datas_and_nesteds:
-                    if isinstance(data, dict) and isinstance(field_data := data.get(field_name, None), list):
-                        if (length := len(field_data)) > 0:
-                            filtered_datas_info.append((data, nested, length))
-                            field_datas += field_data
+                    field_data = data.get(field_name, None)
+                    if field_data and isinstance(field_data, list):
+                        filtered_datas_info.append((data, nested, len(field_data)))
+                        field_datas.extend(field_data)
                 if filtered_datas_info:
-                    results = self.fields[field_name].child._deep_process(field_datas, delete_models)
+                    results = self.fields[field_name].child.deep_process(field_datas, delete_models)
                     for data, nested, length in filtered_datas_info:
                         data[field_name], nested[field_name] = map(list, zip(*results[:length]))
                         results = results[length:]
 
-    def _process_reverse_one_relationships(self, datas: list, primary_keys: list, representations: list[dict],
-                                           delete_models: list[Model]):
+    def _process_reverse_one_relationships(
+            self, processed_datas: list[tuple[dict, dict, any, dict]], delete_models: list[Model]
+    ):
         """
         Process the reverse one_to_one and many_to_one relationship's model for the serializer model.
 
         This method takes a list of data, a list of primary keys, a list of representations, and a list of models to delete.
-        It regroups all nested data of one model, update the reverse field name with the primary_key of the parent and launches _deep_process with the correct serializer for this model.
-        It then replaces the dicts in representations with the representations returned by _deep_process.
+        It regroups all nested data of one model, update the reverse field name with the primary_key of the parent and launches deep_process with the correct serializer for this model.
+        It then replaces the dicts in representations with the representations returned by deep_process.
 
         Args:
-            datas (list): The list of data.
+            processed_datas (list[tuple]): The list of data.
             primary_keys (list): The list of primary keys.
             representations (list): The list of representations.
             delete_models (list[Model]): The list of models to delete.
         """
         for field_name, (model, reverse_name) in self._reverse_one_relationships.items():
             if field_name in self.relations_paths:
-                filtered_datas_info, field_datas = [], []
-                for index, data in enumerate(datas):
-                    if isinstance(data, dict) and isinstance(field_data := data.get(field_name, None), dict):
-                        field_data[reverse_name] = primary_keys[index]
-                        filtered_datas_info.append(index)
-                        field_datas.append(field_data)
+                filtered_datas_info, datas = [], []
+                for data, nested, primary_key, representation in processed_datas:
+                    field_data = data.get(field_name, None)
+                    if field_data and isinstance(field_data, dict):
+                        field_data[reverse_name] = primary_key
+                        filtered_datas_info.append((data, nested))
+                        datas.append(field_data)
                 if filtered_datas_info:
-                    results = self.fields[field_name]._deep_process(field_datas, delete_models)
-                    for index, result in zip(filtered_datas_info, results):
-                        _, representations[index][field_name] = result
+                    serializer = self.fields[field_name]
+                    serializer.relations_paths.add(reverse_name)
+                    results = serializer.deep_process(datas, delete_models)
+                    for (data, nested), result in zip(filtered_datas_info, results):
+                        data[field_name], nested[field_name] = result
 
-    def _process_reverse_many_relationships(self, datas: list, primary_keys: list, representations: list[dict],
-                                            delete_models: list[Model]):
+    def _process_reverse_many_relationships(
+            self, processed_datas: list[tuple[dict, dict, any, dict]], delete_models: list[Model]
+    ):
         """
         Process the reverse many_to_many and one_to_many relationship's model for the serializer model.
 
         This method takes a list of data, a list of primary keys, a list of representations, and a list of models to delete.
-        It regroups all nested data of one model, update the reverse field name with the primary_key of the parent and launches _deep_process with the correct serializer for this model.
-        It then replaces the dicts in representations with the representations returned by _deep_process.
+        It regroups all nested data of one model, update the reverse field name with the primary_key of the parent and launches deep_process with the correct serializer for this model.
+        It then replaces the dicts in representations with the representations returned by deep_process.
 
         Args:
-            datas (list): The list of data.
+            processed_datas (list[tuple]): The list of data.
             primary_keys (list): The list of primary keys.
             representations (list): The list of representations.
             delete_models (list[Model]): The list of models to delete.
         """
         for field_name, (model, reverse_name) in self._reverse_many_relationships.items():
             if field_name in self.relations_paths:
-                filtered_datas_info, field_datas = [], []
-                for index, data in enumerate(datas):
-                    if isinstance(data, dict) and isinstance(field_data := data.get(field_name, None), list):
-                        if (length := len(field_data)) > 0:
-                            for item in field_data:
-                                if isinstance(item, dict):
-                                    item[reverse_name] = primary_keys[index]
-                            filtered_datas_info.append((index, length))
-                            field_datas += field_data
+                filtered_datas_info, datas = [], []
+                for data, nested, primary_key, representation in processed_datas:
+                    field_data = data.get(field_name, None)
+                    if field_data and isinstance(field_data, list):
+                        for item in field_data:
+                            if isinstance(item, dict):
+                                item[reverse_name] = primary_key
+                        filtered_datas_info.append((data, nested, len(field_data)))
+                        datas.extend(field_data)
                 if filtered_datas_info:
-                    results = self.fields[field_name].child._deep_process(field_datas, delete_models)
-                    for index, length in filtered_datas_info:
-                        _, representations[index][field_name] = map(list, zip(*results[:length]))
+                    serializer = self.fields[field_name].child
+                    serializer.relations_paths.add(reverse_name)
+                    results = serializer.deep_process(datas, delete_models)
+                    for data, nested, length in filtered_datas_info:
+                        data[field_name], nested[field_name] = map(list, zip(*results[:length]))
                         results = results[length:]
 
-    def _clean_datas_representation(self, representations: list, delete_models: list[Model]):
+    def _bulk_update_or_create(self, datas_and_nesteds: list[tuple[dict, dict]]) -> list[tuple[dict, dict, any, dict]]:
+        """
+        Create or update multiple instances based on the data in datas_and_nesteds.
+
+        This method takes a list of data and nested tuples, and creates or updates instances based on these inputs.
+        The instances are updated or created based on the model's primary key.
+        If the primary key exists, it will update the instance once and reuse this instance result when the primary key is found inside datas_and_nesteds again.
+        If the primary key does not exist, it will create a new instance and reuse this instance result when the primary key is found inside datas_and_nesteds again.
+        If there is no primary key, it will create a new instance without reusing others.
+
+        Args:
+            datas_and_nesteds (list[tuple[dict, dict]]): A list of tuples containing the data to be created or updated and the nested model representations to update the data representation with.
+
+        Returns:
+            list[tuple[dict, dict, any, dict]]: A list of tuples containing the primary_key or an error message and the representation or ERROR information, this for each tuple in datas_and_nesteds.
+        """
+        pk_name = self.Meta.model._meta.pk.name
+        instances = self.optimize_queryset(self.Meta.model.objects, 0, self.relations_paths).in_bulk(
+            set(data[pk_name] for data, _ in datas_and_nesteds if pk_name in data)
+        )
+        processed_datas, created = [], {}
+        for data, nested in datas_and_nesteds:
+            found_pk = data.get(pk_name, None)
+            if found_pk not in created:
+                pk, representation = type(self)(
+                    context=self.context, depth=0, relations_paths=self.relations_paths
+                ).update_or_create(data, instances=instances)
+                found_pk = found_pk if found_pk is not None else pk
+                created[found_pk] = data, nested, pk, representation
+            processed_datas.append(created[found_pk])
+        return processed_datas
+
+    def _clean_datas(
+            self, datas: list[any], processed_datas: list[tuple[dict, dict, any, dict]], delete_models: list[Model]
+    ) -> list[tuple[any, dict]]:
         """
         Clean the data representations.
 
         This method takes a list of data representations and a list of models to delete, and cleans the data representations based on these inputs.
         It will first check if the nested objects of a representation have fail and write an ERROR message if that is the case.
-        It will then get the list of previews nested objects and delete them if they are part of the model in delete_models.
+        It will then get the list of previous nested objects and delete them if they are part of the model in delete_models.
 
         Args:
             representations (list): The list of data representations.
             delete_models (list[Model]): The list of models to delete.
+
+        Returns:
+            list[tuple[any, dict]]: A list of tuples containing the primary_key or an error message and the representation or ERROR information, this for each tuple in datas_and_nesteds.
         """
+        pks_and_representations = []
+        processed_datas_index = 0
         to_deletes: dict[str, tuple[Model, set]] = {}
-        for representation in representations:
-            if isinstance(representation, dict):
-                if "ERROR" not in representation and any(
-                        (isinstance(field, list) and any(f"ERROR" in item for item in field if isinstance(item, dict)))
-                        or (isinstance(field, dict) and "ERROR" in field)
-                        for field in representation.values()
-                ):
-                    representation["ERROR"] = "Failed to Serialize nested objects"
-                old_nested = representation.pop("OLD_NESTED", {})
+        for data in datas:
+            if isinstance(data, dict):
+                data, nested, primary_key, representation = processed_datas[processed_datas_index]
+                processed_datas_index += 1
                 for field_name, model in self._all_relationships.items():
-                    if model in delete_models:
-                        field_datas = old_nested.get(field_name, [])
-                        old_primary_keys = set(
-                            primary_key[model._meta.pk.name] if isinstance(primary_key, dict) else primary_key
-                            for primary_key in (field_datas if isinstance(field_datas, list) else [field_datas])
-                            if primary_key
-                        )
-                        field_datas = representation.get(field_name, [])
-                        new_primary_keys = set(
-                            primary_key[model._meta.pk.name] if isinstance(primary_key, dict) else primary_key
-                            for primary_key in (field_datas if isinstance(field_datas, list) else [field_datas])
-                            if primary_key
-                        )
+                    if model in delete_models and field_name in nested:
+                        pk_name = model._meta.pk.name
+                        new_nested = nested[field_name]
+                        if isinstance(new_nested, list):
+                            old_primary_keys = set(pk for pk in representation[field_name] if pk)
+                            new_primary_keys = set(
+                                pk[pk_name] if isinstance(pk, dict) else pk for pk in new_nested if pk
+                            )
+                        else:
+                            old_primary_keys = set(pk for pk in [representation[field_name]] if pk)
+                            new_primary_keys = set(
+                                pk[pk_name] if isinstance(pk, dict) else pk for pk in [new_nested] if pk
+                            )
                         if unused_primary_keys := old_primary_keys.difference(new_primary_keys):
                             to_deletes.setdefault(field_name, (model, set()))
                             to_deletes[field_name][1].update(unused_primary_keys)
+                representation.update(nested)
+                if primary_key == self._pk_error:
+                    representation["ERROR"] = self._pk_error
+                    representation.move_to_end('ERROR', last=False)
+                elif any(
+                        (isinstance(field, dict) and "ERROR" in field)
+                        or (isinstance(field, list) and any(
+                            "ERROR" in item for item in field if isinstance(item, dict)
+                        ))
+                        for field in nested.values()
+                ):
+                    representation["ERROR"] = self._pk_error + " nested objects"
+                    representation.move_to_end('ERROR', last=False)
+                pks_and_representations.append((primary_key, representation))
+            else:
+                pks_and_representations.append((data, data))
         for field_name, (model, primary_keys) in to_deletes.items():
             model.objects.filter(pk__in=primary_keys).delete()
+        return pks_and_representations
 
-    def _deep_process(self, datas: list[any], delete_models: list[Model]) -> list[tuple[any, any]]:
+    def deep_process(self, datas: list[any], delete_models: list[Model]) -> list[tuple[any, any]]:
         """
         Deeply process a list of data.
 
@@ -455,15 +515,13 @@ class DeepSerializer(serializers.ModelSerializer):
         Returns:
             list[tuple[any, any]]: A list of tuples, where each tuple contains a primary key and a data representation.
         """
-        datas_and_nesteds = [(data, {} if isinstance(data, dict) else data) for data in datas]
+        datas_and_nesteds = [(data, {}) for data in datas if isinstance(data, dict)]
         self._process_forward_one_relationships(datas_and_nesteds, delete_models)
         self._process_forward_many_relationships(datas_and_nesteds, delete_models)
-        pks_and_representations = self.bulk_update_or_create(datas_and_nesteds)
-        pks, representations = map(list, zip(*pks_and_representations))
-        self._process_reverse_one_relationships(datas, pks, representations, delete_models)
-        self._process_reverse_many_relationships(datas, pks, representations, delete_models)
-        self._clean_datas_representation(representations, delete_models)
-        return pks_and_representations
+        processed_datas = self._bulk_update_or_create(datas_and_nesteds)
+        self._process_reverse_one_relationships(processed_datas, delete_models)
+        self._process_reverse_many_relationships(processed_datas, delete_models)
+        return self._clean_datas(datas, processed_datas, delete_models)
 
     def update_or_create(self, data: dict, instances: dict[any, Model] = None) -> tuple[any, dict]:
         """
@@ -489,7 +547,7 @@ class DeepSerializer(serializers.ModelSerializer):
             return self.save().pk, self.data
         return self._pk_error, self.errors
 
-    def bulk_update_or_create(self, datas_and_nesteds: list[any]) -> list[tuple[any, dict]]:
+    def bulk_update_or_create(self, datas: list[dict]) -> list[tuple[any, dict]]:
         """
         Create or update multiple instances based on the data in datas_and_nesteds.
 
@@ -500,46 +558,18 @@ class DeepSerializer(serializers.ModelSerializer):
         If there is no primary key, it will create a new instance without reusing others.
 
         Args:
-            datas_and_nesteds (list[tuple]): A list of tuples containing the data to be created or updated and the nested model representations to update the data representation with.
+            datas (list[dict]): A list of data to be created or updated.
 
         Returns:
             list[tuple[any, dict]]: A list of tuples containing the primary_key or an error message and the representation or ERROR information, this for each tuple in datas_and_nesteds.
         """
-        pks_and_representations, created = [], {}
-        pk_name = self.Meta.model._meta.pk.name
-        instances = self.optimize_queryset(self.Meta.model.objects, self.Meta.depth, self.relations_paths).in_bulk(set(
-            data[pk_name]
-            for data, _ in datas_and_nesteds
-            if isinstance(data, dict) and pk_name in data
-        ))
-        for data, nested in datas_and_nesteds:
-            if isinstance(data, dict):
-                found_pk = data.get(pk_name, None)
-                if found_pk not in created:
-                    pk, representation = type(self)(
-                        context=self.context,
-                        depth=0,
-                        relations_paths=self.relations_paths
-                    ).update_or_create(data, instances=instances)
-                    if pk == self._pk_error:
-                        representation = OrderedDict(representation, **nested, ERROR=self._pk_error)
-                    else:
-                        representation = OrderedDict(representation, **nested, OLD_NESTED={
-                            field_name: representation[field_name]
-                            for field_name in nested
-                        })
-                    found_pk = found_pk if found_pk is not None else pk
-                    created[found_pk] = pk, representation
-                pks_and_representations.append(created[found_pk])
-            else:
-                pks_and_representations.append((data, nested))
-        return pks_and_representations
+        processed_datas = self._bulk_update_or_create([(data, {}) for data in datas])
+        return [(pk, representation) for _, _, pk, representation in processed_datas]
 
-    def deep_update_or_create(self,
-                              model: Model,
-                              datas: list[dict] | dict,
-                              delete_models: list[Model] = [],
-                              verbose: bool = True) -> list:
+    def deep_update_or_create(
+            self, model: Model, datas: list[dict] | dict, delete_models: list[Model] = [], verbose: bool = True,
+            raise_exception: bool = False
+    ) -> list:
         """
         Create or update multiple instances with their nested instances at any depth based on the data in datas.
 
@@ -553,6 +583,7 @@ class DeepSerializer(serializers.ModelSerializer):
             datas (list[dict] | dict): The list of data to be created or updated.
             delete_models (list[Model], optional): The list of models to delete. Defaults to an empty list.
             verbose (bool, optional): The verbosity flag. If True, the method returns the full representation of the created models. If False, the method only returns the primary keys of the created models. Defaults to True.
+            raise_exception (bool, optional): The raise_exception flag. If True, the method raise a ValidationError exception if an Error has been found during the processing. Defaults to False.
 
         Returns:
             list: A list of the created models or error info if there have been errors.
@@ -563,7 +594,7 @@ class DeepSerializer(serializers.ModelSerializer):
                     *self.get_serializer_class(model, use_case="Deep")(
                         context=self.context,
                         depth=10
-                    )._deep_process(
+                    ).deep_process(
                         datas if isinstance(datas, list) else [datas],
                         delete_models
                     )
@@ -572,6 +603,8 @@ class DeepSerializer(serializers.ModelSerializer):
                     raise ValidationError(list(representation))
                 return list(representation) if verbose else list(primary_key)
         except ValidationError as e:
+            if raise_exception:
+                raise e
             return e.detail
 
     @classmethod
