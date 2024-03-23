@@ -49,13 +49,13 @@ class DeepSerializer(serializers.ModelSerializer):
                 if field_relation.related_model and field_relation.name not in cls.Meta.fields
             ]
             cls._serializers[cls.Meta.use_case + model.__name__ + "Serializer"] = cls
-            selects_and_prefetches = cls.build_selects_and_prefetches(model, excludes)
-            cls._selects_related = select_related = selects_and_prefetches[0]
-            cls._prefetches_related = prefetch_related = selects_and_prefetches[1]
-            cls._prefetches_related_with_selects = prefetches_related_with_selects = selects_and_prefetches[2]
-            cls._all_path_related = sorted(set(select_related + prefetch_related + [
+            selects, prefetches, prefetches_with_selects = cls.build_selects_and_prefetches(model, excludes)
+            cls._selects_related = selects
+            cls._prefetches_related = prefetches
+            cls._prefetches_related_with_selects = prefetches_with_selects
+            cls._all_path_related = sorted(set(selects + prefetches + [
                 f"{prefetch_path}__{select_path}"
-                for prefetch_path, (_, prefetch_selects) in prefetches_related_with_selects.items()
+                for prefetch_path, (_, prefetch_selects) in prefetches_with_selects.items()
                 for select_path in prefetch_selects
             ]))
             forward_one, forward_many, reverse_one, reverse_many = cls.build_relationships(model, excludes)
@@ -146,14 +146,15 @@ class DeepSerializer(serializers.ModelSerializer):
             if (model := field_relation.related_model) and model not in excludes:
                 field_name = field_relation.name
                 is_select_related = field_relation.one_to_one or field_relation.many_to_one
+                is_not_reverse_blocked = not hasattr(field_relation, "field") or field_relation.related_name
                 excludes = excludes + [parent_model]
-                if is_select_related and not hasattr(field_relation, "field"):
+                if is_select_related and is_not_reverse_blocked:
                     selects, prefetches, prefetches_selects = cls.build_selects_and_prefetches(model, excludes)
                     selects_related += [field_name] + [f"{field_name}__{path}" for path in selects]
                     prefetches_related += [f"{field_name}__{path}" for path in prefetches]
                     for path, prefetch_model_and_selects in prefetches_selects.items():
                         prefetches_with_selects[f"{field_name}__{path}"] = prefetch_model_and_selects
-                elif not is_select_related and (not hasattr(field_relation, "field") or field_relation.related_name):
+                elif not is_select_related and is_not_reverse_blocked:
                     selects, prefetches, prefetches_selects = cls.build_selects_and_prefetches(model, excludes)
                     if selects:
                         prefetches_with_selects[field_name] = model, selects
@@ -167,7 +168,7 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         Optimize a queryset by selecting related paths and prefetching related objects.
 
-        This method takes a queryset, and optimizes it by selecting related paths and prefetching related objects based on the serializer's metadata and the queryset's relationships.
+        This method takes a queryset, and optimizes it by selecting related paths and prefetching related objects based on the serializer's metadata and the queryset relationships.
         It builds a list of select paths and a list of prefetch paths, and then applies these to the queryset using the select_related and prefetch_related methods.
 
         Args:
@@ -608,7 +609,7 @@ class DeepSerializer(serializers.ModelSerializer):
             return e.detail
 
     @classmethod
-    def get_serializer_class(cls, model: Model, depth: int = 0, fields: str | tuple = '__all__', use_case: str = ""):
+    def get_serializer_class(cls, model: Model, use_case: str = ""):
         """
         Retrieve or create a serializer for the given model and its use case.
 
@@ -620,8 +621,6 @@ class DeepSerializer(serializers.ModelSerializer):
 
         Args:
             model (Model): The model of the serializer.
-            depth (int, optional): The depth of the serializer. Defaults to 0.
-            fields (str | tuple, optional): All the fields for this serializer. Defaults to '__all__'.
             use_case (str, optional): The use case for which the serializer will be used. If empty, the main serializer for this model will be used. Defaults to "".
 
         Returns:
@@ -629,16 +628,27 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         serializer_name = f"{use_case}{model.__name__}Serializer"
         if serializer_name not in cls._serializers:
-            _model, _depth, _fields, _use_case = model, depth, fields, use_case
+            _model, _use_case = model, use_case
 
             class CommonSerializer(DeepSerializer):
                 class Meta:
                     model = _model
-                    depth = _depth
-                    fields = _fields
+                    depth = 0
+                    fields = '__all__'
                     use_case = _use_case
 
             CommonSerializer.__name__ = serializer_name
+            CommonSerializer.__doc__ = f'''
+            A serializer for the model {_model}, used for {_use_case if _use_case else 'anything'}.
+            
+            This serializer inherits from the DeepSerializer and includes a Meta class with the model, a depth of 0, all fields, and the use case. The model and use case are provided when the serializer is created in the get_serializer_class method.
+            
+            Attributes:
+                Meta: A class used to provide metadata to the serializer. It includes the model, a depth of 0, all fields, and the use case.
+            
+                model (Model): The model of the serializer.
+                use_case (str): The use case for which the serializer will be used. If empty, the main serializer for this model will be used.
+            '''
 
         return cls._serializers[serializer_name]
 
