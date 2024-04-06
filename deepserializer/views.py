@@ -31,13 +31,10 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         super().__init_subclass__(**kwargs)
         if hasattr(cls, 'queryset') and cls.queryset is not None:
             model = cls.queryset.model
-            if cls.serializer_class is None:
-                cls.serializer_class = DeepSerializer.get_serializer_class(
-                    model,
-                    use_case=cls.use_case
-                )
             cls._viewsets[cls.use_case + model.__name__ + "ViewSet"] = cls
             cls._possible_fields = cls.build_possible_fields(model, [])
+            if cls.serializer_class is None:
+                cls.serializer_class = DeepSerializer.get_serializer_class(model, use_case=cls.use_case)
 
     @classmethod
     def build_possible_fields(cls, parent_model: Model, excludes: list[Model]) -> set[str]:
@@ -74,7 +71,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
             models (list): A list of models to register in the router.
         """
         for model in models:
-            router.register(model.__name__, cls.get_viewsets(model), basename=model.__name__)
+            router.register(model.__name__, cls.get_view_set_class(model), basename=model.__name__)
 
     def get_serializer(self, *args, **kwargs):
         """
@@ -88,7 +85,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         Returns:
             Serializer: The serializer instance.
         """
-        if self.request :
+        if self.request:
             params = self.request.query_params
             serializer_class = self.get_serializer_class()
             kwargs.setdefault('context', self.get_serializer_context())
@@ -102,7 +99,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
                 ),
                 **kwargs
             )
-        else :
+        else:
             return super().get_serializer(*args, **kwargs)
 
     def get_queryset(self):
@@ -144,7 +141,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         return queryset
 
     @classmethod
-    def get_viewsets(cls, model: Model, use_case: str = ""):
+    def get_view_set_class(cls, model: Model, use_case: str = ""):
         """
         Retrieves or creates a viewset for the specified model and use case.
         Manually created viewsets inheriting DeepViewSet will automatically be used for their use case.
@@ -158,22 +155,22 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         Returns:
             ViewSet: The viewset for the specified model and use case.
         """
-        viewset_name = use_case + model.__name__ + "ViewSet"
-        if viewset_name not in cls._viewsets:
+        view_set_name = use_case + model.__name__ + "ViewSet"
+        if view_set_name not in cls._viewsets:
             _model, _use_case = model, use_case
 
             class CommonViewSet(cls):
                 use_case = _use_case
                 queryset = _model.objects
 
-            CommonViewSet.__name__ = viewset_name
+            CommonViewSet.__name__ = view_set_name
             CommonViewSet.__doc__ = f"""
             Generated ViewSet for the model: '{model.__name__}'
             Used for {use_case if use_case else 'Read and Write'}
 
             """ + ReadOnlyDeepViewSet.get_queryset.__doc__
 
-        return cls._viewsets[viewset_name]
+        return cls._viewsets[view_set_name]
 
 
 class DeepViewSet(ReadOnlyDeepViewSet, ModelViewSet):
