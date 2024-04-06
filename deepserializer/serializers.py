@@ -11,9 +11,9 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.utils.field_mapping import (get_nested_relation_kwargs, )
 
 
-###################################################################################################
+########################################################################################################################
 #
-###################################################################################################
+########################################################################################################################
 
 
 class DeepSerializer(serializers.ModelSerializer):
@@ -43,22 +43,21 @@ class DeepSerializer(serializers.ModelSerializer):
             if not hasattr(cls.Meta, "use_case"):
                 cls.Meta.use_case = ""
             model = cls.Meta.model
+            cls._serializers[cls.Meta.use_case + model.__name__ + "Serializer"] = cls
             excludes = [] if cls.Meta.fields == '__all__' else [
                 field_relation.related_model
                 for field_relation in model._meta.get_fields()
                 if field_relation.related_model and field_relation.name not in cls.Meta.fields
             ]
-            cls._serializers[cls.Meta.use_case + model.__name__ + "Serializer"] = cls
-            selects, prefetches, prefetches_with_selects = cls.build_selects_and_prefetches(model, excludes)
-            cls._selects_related = selects
-            cls._prefetches_related = prefetches
+            selects_related, prefetches_related, prefetches_with_selects = cls._build_related_paths(model, excludes)
+            cls._selects_related, cls._prefetches_related = selects_related, prefetches_related
             cls._prefetches_related_with_selects = prefetches_with_selects
-            cls._all_path_related = sorted(set(selects + prefetches + [
+            cls._all_path_related = sorted(set(selects_related + prefetches_related + [
                 f"{prefetch_path}__{select_path}"
                 for prefetch_path, (_, prefetch_selects) in prefetches_with_selects.items()
                 for select_path in prefetch_selects
             ]))
-            forward_one, forward_many, reverse_one, reverse_many = cls.build_relationships(model, excludes)
+            forward_one, forward_many, reverse_one, reverse_many = cls._build_model_relationships(model, excludes)
             cls._forward_one_relationships, cls._forward_many_relationships = forward_one, forward_many
             cls._reverse_one_relationships, cls._reverse_many_relationships = reverse_one, reverse_many
             cls._all_relationships = {
@@ -89,7 +88,7 @@ class DeepSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
 
     @classmethod
-    def build_relationships(
+    def _build_model_relationships(
             cls, parent_model: Model, excludes: list[Model]
     ) -> tuple[dict[str, Model], dict[str, Model], dict[str, tuple[Model, str]], dict[str, tuple[Model, str]]]:
         """
@@ -111,21 +110,20 @@ class DeepSerializer(serializers.ModelSerializer):
         forward_one_relations, forward_many_relations, reverse_one_relations, reverse_many_relations = {}, {}, {}, {}
         for field_relation in parent_model._meta.get_fields():
             if (model := field_relation.related_model) and model not in excludes:
-                field_name = field_relation.name
                 if field_relation.one_to_one or field_relation.many_to_one:
                     if not hasattr(field_relation, "field"):
-                        forward_one_relations[field_name] = model
-                    elif hasattr(field_relation, "field") and field_relation.related_name:
-                        reverse_one_relations[field_name] = model, field_relation.field.name
-                elif field_relation.many_to_many or field_relation.one_to_many:
+                        forward_one_relations[field_relation.name] = model
+                    elif field_relation.related_name:
+                        reverse_one_relations[field_relation.name] = model, field_relation.field.name
+                else:
                     if not hasattr(field_relation, "field"):
-                        forward_many_relations[field_name] = model
-                    elif hasattr(field_relation, "field") and field_relation.related_name:
-                        reverse_many_relations[field_name] = model, field_relation.field.name
+                        forward_many_relations[field_relation.name] = model
+                    elif field_relation.related_name:
+                        reverse_many_relations[field_relation.name] = model, field_relation.field.name
         return forward_one_relations, forward_many_relations, reverse_one_relations, reverse_many_relations
 
     @classmethod
-    def build_selects_and_prefetches(
+    def _build_related_paths(
             cls, parent_model: Model, excludes: list[Model]
     ) -> tuple[list[str], list[str], dict[str, tuple[Model, list[str]]]]:
         """
@@ -141,27 +139,22 @@ class DeepSerializer(serializers.ModelSerializer):
                 - list[str]: Paths for prefetch_related queries.
                 - dict[str, tuple[Model, list[str]]]: Mapping of prefetch_related paths to tuples of related model and its select_related paths.
         """
-        selects_related, prefetches_related, prefetches_with_selects = [], [], {}
+        selects_related, prefetches_related, prefetches_related_with_selects = [], [], {}
         for field_relation in parent_model._meta.get_fields():
             if (model := field_relation.related_model) and model not in excludes:
-                field_name = field_relation.name
-                is_select_related = field_relation.one_to_one or field_relation.many_to_one
-                is_not_reverse_blocked = not hasattr(field_relation, "field") or field_relation.related_name
-                excludes = excludes + [parent_model]
-                if is_select_related and is_not_reverse_blocked:
-                    selects, prefetches, prefetches_selects = cls.build_selects_and_prefetches(model, excludes)
-                    selects_related += [field_name] + [f"{field_name}__{path}" for path in selects]
-                    prefetches_related += [f"{field_name}__{path}" for path in prefetches]
+                if not hasattr(field_relation, "field") or field_relation.related_name:
+                    selects, prefetches, prefetches_selects = cls._build_related_paths(model, excludes + [parent_model])
+                    field_name = field_relation.name
+                    if field_relation.one_to_one or field_relation.many_to_one:
+                        selects_related += [field_name] + [f"{field_name}__{path}" for path in selects]
+                        prefetches_related += [f"{field_name}__{path}" for path in prefetches]
+                    else:
+                        prefetches_related += [field_name] + [f"{field_name}__{path}" for path in prefetches]
+                        if selects:
+                            prefetches_related_with_selects[field_name] = model, selects
                     for path, prefetch_model_and_selects in prefetches_selects.items():
-                        prefetches_with_selects[f"{field_name}__{path}"] = prefetch_model_and_selects
-                elif not is_select_related and is_not_reverse_blocked:
-                    selects, prefetches, prefetches_selects = cls.build_selects_and_prefetches(model, excludes)
-                    if selects:
-                        prefetches_with_selects[field_name] = model, selects
-                    prefetches_related += [field_name] + [f"{field_name}__{path}" for path in prefetches]
-                    for path, prefetch_model_and_selects in prefetches_selects.items():
-                        prefetches_with_selects[f"{field_name}__{path}"] = prefetch_model_and_selects
-        return selects_related, prefetches_related, prefetches_with_selects
+                        prefetches_related_with_selects[f"{field_name}__{path}"] = prefetch_model_and_selects
+        return selects_related, prefetches_related, prefetches_related_with_selects
 
     @classmethod
     def optimize_queryset(cls, queryset, depth: int, relations_paths: set[str]):
@@ -179,26 +172,14 @@ class DeepSerializer(serializers.ModelSerializer):
         Returns:
             The optimized queryset with related paths selected and related objects prefetched.
         """
-        selects = [
-            select_path
-            for select_path in cls._selects_related
-            if select_path in relations_paths
-        ]
-        prefetches = OrderedDict(
-            (prefetch_path, prefetch_path)
-            for prefetch_path in cls._prefetches_related
-            if prefetch_path in relations_paths
-        )
+        selects = [path for path in cls._selects_related if path in relations_paths]
+        prefetches = OrderedDict((path, path) for path in cls._prefetches_related if path in relations_paths)
         for prefetch_path, (model, prefetch_selects) in cls._prefetches_related_with_selects.items():
-            filtered_prefetch_selects = [
-                select_path
-                for select_path in prefetch_selects
-                if f"{prefetch_path}__{select_path}" in relations_paths
-            ]
-            if filtered_prefetch_selects and prefetch_path in prefetches:
+            new_prefetch_selects = [path for path in prefetch_selects if f"{prefetch_path}__{path}" in relations_paths]
+            if new_prefetch_selects and prefetch_path in prefetches:
                 prefetches[prefetch_path] = Prefetch(
                     prefetch_path,
-                    queryset=model.objects.select_related(*filtered_prefetch_selects)
+                    queryset=model.objects.select_related(*new_prefetch_selects)
                 )
         if depth > 0 and selects:
             queryset = queryset.select_related(*selects)
@@ -285,7 +266,7 @@ class DeepSerializer(serializers.ModelSerializer):
         Returns:
             tuple: Tuple of a serializer and a dictionary of nested relation kwargs.
         """
-        serializer = self.get_serializer_class(relation_info.related_model, use_case=f"Deep")
+        serializer = self.get_serializer_class(relation_info.related_model, use_case="Deep")
         nested_relation_kwargs = get_nested_relation_kwargs(relation_info)
         nested_relation_kwargs["depth"] = nested_depth - 1
         nested_relation_kwargs["relations_paths"] = self.get_nested_relations_paths(field_name)
@@ -354,8 +335,6 @@ class DeepSerializer(serializers.ModelSerializer):
 
         Args:
             processed_datas (list[tuple]): The list of data.
-            primary_keys (list): The list of primary keys.
-            representations (list): The list of representations.
             delete_models (list[Model]): The list of models to delete.
         """
         for field_name, (model, reverse_name) in self._reverse_one_relationships.items():
@@ -386,8 +365,6 @@ class DeepSerializer(serializers.ModelSerializer):
 
         Args:
             processed_datas (list[tuple]): The list of data.
-            primary_keys (list): The list of primary keys.
-            representations (list): The list of representations.
             delete_models (list[Model]): The list of models to delete.
         """
         for field_name, (model, reverse_name) in self._reverse_many_relationships.items():
@@ -409,7 +386,9 @@ class DeepSerializer(serializers.ModelSerializer):
                         data[field_name], nested[field_name] = map(list, zip(*results[:length]))
                         results = results[length:]
 
-    def _bulk_update_or_create(self, datas_and_nesteds: list[tuple[dict, dict]]) -> list[tuple[dict, dict, any, dict]]:
+    def _bulk_update_or_create(
+            self, datas_and_nesteds: list[tuple[dict, dict]]
+    ) -> list[tuple[dict, dict, any, OrderedDict]]:
         """
         Create or update multiple instances based on the data in datas_and_nesteds.
 
@@ -442,8 +421,11 @@ class DeepSerializer(serializers.ModelSerializer):
         return processed_datas
 
     def _clean_datas(
-            self, datas: list[any], processed_datas: list[tuple[dict, dict, any, dict]], delete_models: list[Model]
-    ) -> list[tuple[any, dict]]:
+            self,
+            datas: list[any],
+            processed_datas: list[tuple[dict, dict, any, OrderedDict]],
+            delete_models: list[Model]
+    ) -> list[tuple[any, OrderedDict]]:
         """
         Clean the data representations.
 
@@ -452,7 +434,8 @@ class DeepSerializer(serializers.ModelSerializer):
         It will then get the list of previous nested objects and delete them if they are part of the model in delete_models.
 
         Args:
-            representations (list): The list of data representations.
+            datas (list[any]): The list of data to process.
+            processed_datas (list[tuple]): The list of data.
             delete_models (list[Model]): The list of models to delete.
 
         Returns:
@@ -524,7 +507,7 @@ class DeepSerializer(serializers.ModelSerializer):
         self._process_reverse_many_relationships(processed_datas, delete_models)
         return self._clean_datas(datas, processed_datas, delete_models)
 
-    def update_or_create(self, data: dict, instances: dict[any, Model] = None) -> tuple[any, dict]:
+    def update_or_create(self, data: dict, instances: dict[any, Model] = None) -> tuple[any, OrderedDict]:
         """
         Update or create an instance with data, based on the model's primary key.
 
@@ -568,9 +551,13 @@ class DeepSerializer(serializers.ModelSerializer):
         return [(pk, representation) for _, _, pk, representation in processed_datas]
 
     def deep_update_or_create(
-            self, model: Model, datas: list[dict] | dict, delete_models: list[Model] = [], verbose: bool = True,
+            self,
+            model: Model,
+            datas: list[dict] | dict,
+            delete_models: list[Model] = [],
+            verbose: bool = True,
             raise_exception: bool = False
-    ) -> list:
+    ) -> list[any]:
         """
         Create or update multiple instances with their nested instances at any depth based on the data in datas.
 
@@ -652,6 +639,6 @@ class DeepSerializer(serializers.ModelSerializer):
 
         return cls._serializers[serializer_name]
 
-###################################################################################################
+########################################################################################################################
 #
-###################################################################################################
+########################################################################################################################
