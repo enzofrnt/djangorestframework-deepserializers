@@ -2,40 +2,20 @@
 A unique viewset for all your need of deep read and deep write, made easy
 """
 from django.db.models import Model
+from rest_framework import status
+from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
-
+from typing import List
 from .serializers import DeepSerializer
+from .utils import ModelInfo
 
 
 ###################################################################################################
 #
 ###################################################################################################
-
-
-class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
-    """
-    A read-only viewset that provides deep read functionality. This viewset is designed to make deep reading and writing easier.
-
-    """
+class DeepViewSet():
     _viewsets = {}
-    use_case = "ReadOnly"
-
-    def __init_subclass__(cls, **kwargs):
-        """
-        Initializes subclasses of ReadOnlyDeepViewSet.
-        It saves important information such as all the viewsets inheriting this class and all possible fields for filtering or ordering the queryset.
-
-        Args:
-            kwargs: Additional keyword arguments.
-        """
-        super().__init_subclass__(**kwargs)
-        if hasattr(cls, 'queryset') and cls.queryset is not None:
-            model = cls.queryset.model
-            cls._viewsets[cls.use_case + model.__name__ + "ViewSet"] = cls
-            cls._possible_fields = cls.build_possible_fields(model, [])
-            if cls.serializer_class is None:
-                cls.serializer_class = DeepSerializer.get_serializer_class(model, use_case=cls.use_case)
-
+    
     @classmethod
     def build_possible_fields(cls, parent_model: Model, excludes: list[Model]) -> set[str]:
         """
@@ -62,7 +42,7 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
         return possible_fields
 
     @classmethod
-    def init_router(cls, router, models: list) -> None:
+    def init_router(cls, router, models_info: List[ModelInfo]) -> None:
         """
         Creates viewsets for all the models and registers them in the router.
 
@@ -70,8 +50,67 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
             router: A rest_framework router.
             models (list): A list of models to register in the router.
         """
-        for model in models:
-            router.register(model.__name__, cls.get_view_set_class(model), basename=model.__name__)
+        for model_info in models_info:
+            router.register(model_info.model.__name__, cls.get_view_set_class(model_info), basename=model_info.model.__name__)
+
+    @classmethod
+    def get_view_set_class(cls, model_info: ModelInfo, use_case: str = ""):
+        """
+        Retrieves or creates a viewset for the specified model and use case.
+        Manually created viewsets inheriting DeepViewSet will automatically be used for their use case.
+
+        If your viewset is only used in a specific use case, specify it in the use_case parameter.
+
+        Args:
+            model (Model): The model related to the desired viewset.
+            use_case (str): The use case that this viewset will be used for. If empty, it will be the main viewset for this model.
+
+        Returns:
+            ViewSet: The viewset for the specified model and use case.
+        """
+        view_set_name = use_case + model_info.model.__name__ + "ViewSet"
+        if view_set_name not in cls._viewsets:
+            _model, _use_case = model_info.model, use_case
+
+            if model_info.secure:
+                used_view_set = SecureModelDeepViewSet
+            else:
+                used_view_set = ModelDeepViewSet
+            class CommonViewSet(used_view_set):
+                use_case = _use_case
+                queryset = _model.objects
+
+            CommonViewSet.__name__ = view_set_name
+            CommonViewSet.__doc__ = f"""
+            Generated ViewSet for the model: '{model_info.model.__name__}'
+            Used for {use_case if use_case else 'Read and Write'}
+
+            """ + ReadOnlyModelDeepViewSet.get_queryset.__doc__
+
+        return cls._viewsets[view_set_name]
+            
+class ReadOnlyModelDeepViewSet(DeepViewSet, ReadOnlyModelViewSet):
+    """
+    A read-only viewset that provides deep read functionality. This viewset is designed to make deep reading and writing easier.
+
+    """
+    use_case = "DeepReadOnly"
+
+    def __init_subclass__(cls, **kwargs):
+        """
+        Initializes subclasses of ReadOnlyDeepViewSet.
+        It saves important information such as all the viewsets inheriting this class and all possible fields for filtering or ordering the queryset.
+
+        Args:
+            kwargs: Additional keyword arguments.
+        """
+        super().__init_subclass__(**kwargs)
+        if hasattr(cls, 'queryset') and cls.queryset is not None:
+            model = cls.queryset.model
+            cls._viewsets[cls.use_case + model.__name__ + "ViewSet"] = cls
+            cls._possible_fields = cls.build_possible_fields(model, [])
+            if cls.serializer_class is None:
+                cls.serializer_class = DeepSerializer.get_serializer_class(model, use_case=cls.use_case)
 
     def get_serializer(self, *args, **kwargs):
         """
@@ -140,45 +179,34 @@ class ReadOnlyDeepViewSet(ReadOnlyModelViewSet):
             queryset = queryset.order_by(*order_by)
         return queryset
 
-    @classmethod
-    def get_view_set_class(cls, model: Model, use_case: str = ""):
-        """
-        Retrieves or creates a viewset for the specified model and use case.
-        Manually created viewsets inheriting DeepViewSet will automatically be used for their use case.
 
-        If your viewset is only used in a specific use case, specify it in the use_case parameter.
-
-        Args:
-            model (Model): The model related to the desired viewset.
-            use_case (str): The use case that this viewset will be used for. If empty, it will be the main viewset for this model.
-
-        Returns:
-            ViewSet: The viewset for the specified model and use case.
-        """
-        view_set_name = use_case + model.__name__ + "ViewSet"
-        if view_set_name not in cls._viewsets:
-            _model, _use_case = model, use_case
-
-            class CommonViewSet(cls):
-                use_case = _use_case
-                queryset = _model.objects
-
-            CommonViewSet.__name__ = view_set_name
-            CommonViewSet.__doc__ = f"""
-            Generated ViewSet for the model: '{model.__name__}'
-            Used for {use_case if use_case else 'Read and Write'}
-
-            """ + ReadOnlyDeepViewSet.get_queryset.__doc__
-
-        return cls._viewsets[view_set_name]
-
-
-class DeepViewSet(ReadOnlyDeepViewSet, ModelViewSet):
+class SecureModelDeepViewSet(ReadOnlyModelDeepViewSet, ModelViewSet):
     """
-    A viewset that provides deep read and write functionality. This viewset is designed to make deep reading and writing easier.
+    A viewset that provides deep read and basic write functionality. This viewset is designed to make deep reading easier.
 
     """
     use_case = ""
+
+class ModelDeepViewSet(ReadOnlyModelDeepViewSet):
+    """
+    A view set that provide deep read and write functionality. This viewset is designed to make deep reading and writing easier.
+    """
+    use_case = ""
+
+    def create(self, request, *args, **kwargs):
+        return self.perform_deep_update_or_create(self.get_serializer(), request.data)
+    
+    def update(self, request, *args, **kwargs):
+        return self.perform_deep_update_or_create(self.get_serializer(), request.data)
+    
+    def perform_deep_update_or_create(self, serializer, data):
+        results = serializer.deep_update_or_create(
+            self.queryset.model,
+            data,
+        )
+        if any("ERROR" in item for item in results if isinstance(item, dict)):
+            return Response(results, status=status.HTTP_409_CONFLICT)
+        return Response(results, status=status.HTTP_200_OK)
 
 ###################################################################################################
 #

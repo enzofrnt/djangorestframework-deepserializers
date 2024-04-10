@@ -1,0 +1,39 @@
+@startuml diagram_name
+
+class ModelViewSet {
+    + C
+    + R
+    + U
+    + D
+}
+class DeepViewSet {
+    + Needed method for deep
+}
+class ReadOnlyModelViewSet {
+    + R
+}
+class ReadOnlyModelDeepViewSet {
+    + R+Deep
+}
+class ModelDeepViewSet {
+    + C+Deep
+    + R+Deep
+    + U+Deep
+    + D
+}
+class SecureModelDeepViewSet {
+    + C
+    + R+Deep
+    + U
+    + D
+}
+
+SecureModelDeepViewSet <|-- ModelViewSet
+SecureModelDeepViewSet <|-- ReadOnlyModelDeepViewSet
+
+ModelDeepViewSet <|-- ReadOnlyModelDeepViewSet
+
+ReadOnlyModelDeepViewSet <|-- ReadOnlyModelViewSet
+ReadOnlyModelDeepViewSet <|-- DeepViewSet
+@enduml
+
