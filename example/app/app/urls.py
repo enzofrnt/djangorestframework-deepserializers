@@ -17,18 +17,18 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
-from deepserializer import DeepViewSet
+from deepserializer import DeepViewSet, ModelInfo
 from deepserializer_app.models import HighSchool, Student, Class
 from deepserializer_app.views import sudentview, basicstudentview
 
 router = routers.DefaultRouter()
 DeepViewSet.init_router(router, [
-    HighSchool,
-    Student,
-    Class,
+    ModelInfo(model=HighSchool, secure=False),
+    ModelInfo(model=Student, secure=True),
+    ModelInfo(model=Class, secure=False),
 ])
-router.register('test',sudentview, basename='student')
-router.register('bob',basicstudentview, basename='student1')
+# router.register('test',sudentview, basename='student')
+# router.register('bob',basicstudentview, basename='student1')
 
 urlpatterns = [
     path('', include(router.urls)),

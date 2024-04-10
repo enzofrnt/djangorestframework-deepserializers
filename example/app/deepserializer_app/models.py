@@ -8,10 +8,10 @@ class HighSchool(models.Model):
 class Class(models.Model):
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100)
-    high_school = models.ForeignKey(HighSchool, on_delete=models.CASCADE)
+    high_school = models.ForeignKey(HighSchool, on_delete=models.CASCADE, related_name='classes')
 
 class Student(models.Model):
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100)
     age = models.IntegerField()
-    class_field = models.ForeignKey(Class, on_delete=models.CASCADE)
+    class_field = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='students')
