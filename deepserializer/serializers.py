@@ -578,15 +578,15 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         try:
             with atomic():
-                primary_key, representation = zip(
-                    *self.get_serializer_class(model, use_case="Deep")(
-                        context=self.context,
-                        depth=10
-                    ).deep_process(
-                        datas if isinstance(datas, list) else [datas],
-                        delete_models
-                    )
+                serializer = self.get_serializer_class(model, use_case="Deep")(
+                    context=self.context,
+                    depth=10
                 )
+                repr(serializer)  # needed to preload all nested serializer, trying to find a better solution
+                primary_key, representation = zip(*serializer.deep_process(
+                    datas if isinstance(datas, list) else [datas],
+                    delete_models
+                ))
                 if any("ERROR" in data for data in representation if isinstance(data, dict)):
                     raise ValidationError(list(representation))
                 return list(representation) if verbose else list(primary_key)
