@@ -6,9 +6,12 @@ RUN pip install -r /requirements.txt
 
 RUN rm -rf /requirements.txt
 
-# makemigrations
+WORKDIR /app
 
-# migrate
+# replace the following commend by an infinite loop to keep the container running and make modifications
+# CMD ["tail", "-f", "/dev/null"]
+RUN python manage.py makemigrations
 
-#infinite tail
-CMD ["tail", "-f", "/dev/null"]
+RUN python manage.py migrate
+
+CMD [ "python", "manage.py", "runserver", "0.0.0.0:8000" ]
