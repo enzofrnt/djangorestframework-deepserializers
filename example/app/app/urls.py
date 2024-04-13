@@ -19,7 +19,6 @@ from django.urls import path, include
 from rest_framework import routers
 from deepserializer import DeepViewSet, ModelInfo
 from deepserializer_app.models import HighSchool, Student, Class
-from deepserializer_app.views import sudentview, basicstudentview
 
 router = routers.DefaultRouter()
 DeepViewSet.init_router(router, [
@@ -27,10 +26,7 @@ DeepViewSet.init_router(router, [
     ModelInfo(model=Student, secure=True),
     ModelInfo(model=Class, secure=False),
 ])
-# router.register('test',sudentview, basename='student')
-# router.register('bob',basicstudentview, basename='student1')
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('admin/', admin.site.urls),
 ]
