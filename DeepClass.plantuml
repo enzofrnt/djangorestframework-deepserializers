@@ -1,0 +1,47 @@
+@startuml deep_viewset_conception
+
+legend top left
+== Overview of deepviewset conception ==
+This file is an overview of viewet conception in the module that not a real conception.
+
+CRUD - Create, Read, Update, Delete
+Deep - Mean that the CRUD operation is able to be done in depth.
+endlegend
+
+class ModelViewSet {
+    + C
+    + R
+    + U
+    + D
+}
+class DeepViewSet {
+    + Needed method for the deep operation of the module
+}
+class ReadOnlyModelViewSet {
+    + R
+}
+class ReadOnlyModelDeepViewSet {
+    + R+Deep
+}
+class ModelDeepViewSet {
+    + C+Deep
+    + R+Deep
+    + U+Deep
+    + D
+}
+class SecureModelDeepViewSet {
+    + C
+    + R+Deep
+    + U
+    + D
+}
+
+SecureModelDeepViewSet <|-- ModelViewSet
+SecureModelDeepViewSet <|-- ReadOnlyModelDeepViewSet
+
+ModelDeepViewSet <|-- ReadOnlyModelDeepViewSet
+
+ReadOnlyModelDeepViewSet <|-- ReadOnlyModelViewSet
+ReadOnlyModelDeepViewSet <|-- DeepViewSet
+
+@enduml
