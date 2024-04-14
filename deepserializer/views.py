@@ -2,6 +2,9 @@
 A unique viewset for all your need of deep read and deep write, made easy
 """
 from django.db.models import Model
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
 from .serializers import DeepSerializer
@@ -179,6 +182,19 @@ class DeepViewSet(ReadOnlyDeepViewSet, ModelViewSet):
 
     """
     use_case = ""
+
+
+class DeepCreateViewSet(DeepViewSet):
+    """
+    A viewset that provides the action 'deep_create' for the deep_update_or_create function. This viewset is designed to have a ready made viewset for creating or updating nested model.
+
+    """
+
+    @action(detail=False, methods=['post'])
+    def deep_create(self, request):
+        serializer = self.get_serializer()
+        results = serializer.deep_update_or_create(self.queryset.model, request.data, raise_exception=True)
+        return Response(results, status=status.HTTP_201_CREATED)
 
 ###################################################################################################
 #
