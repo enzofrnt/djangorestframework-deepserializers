@@ -59,15 +59,16 @@ class Chapter(models.Model):
 `urls.py`
 ```Python
 from rest_framework import routers
-from deepserializer import DeepViewSet
+from deepserializer import DeepViewSet, DeepCreateViewSet
 from myapp.models import Book, Chapter, Tag
 
 router = routers.DefaultRouter()
 DeepViewSet.init_router(router, [
-    Book,
     Chapter,
     Tag
 ])
+# The DeepCreateViewSet class possesses the deep_create action that allows the creation or update of nested models.
+DeepCreateViewSet.init_router(router, [Book])
 ```
 If you need the read only ViewSets version, replace DeepViewSet with ReadOnlyDeepViewSet
 
