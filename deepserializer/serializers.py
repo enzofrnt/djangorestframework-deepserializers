@@ -408,13 +408,24 @@ class DeepSerializer(serializers.ModelSerializer):
         instances = self.optimize_queryset(self.Meta.model.objects, 0, self.relations_paths).in_bulk(
             set(data[pk_name] for data, _ in datas_and_nesteds if pk_name in data)
         )
+        serializer = self.get_serializer_class(self.Meta.model, "DeepCreate")
         processed_datas, created = [], {}
         for data, nested in datas_and_nesteds:
             found_pk = data.get(pk_name, None)
             if found_pk not in created:
-                pk, representation = type(self)(
-                    context=self.context, depth=0, relations_paths=self.relations_paths
-                ).update_or_create(data, instances=instances)
+                instance = instances.get(found_pk, None)
+                serializer_instance = serializer(
+                    instance=instance,
+                    data=data,
+                    partial=bool(instance),
+                    context=self.context,
+                    depth=0,
+                    relations_paths=self.relations_paths
+                )
+                if serializer_instance.is_valid():
+                    pk, representation = serializer_instance.save().pk, serializer_instance.data
+                else:
+                    pk, representation = serializer_instance._pk_error, serializer_instance.errors
                 found_pk = found_pk if found_pk is not None else pk
                 created[found_pk] = data, nested, pk, representation
             processed_datas.append(created[found_pk])
@@ -578,15 +589,15 @@ class DeepSerializer(serializers.ModelSerializer):
         """
         try:
             with atomic():
-                serializer = self.get_serializer_class(model, use_case="Deep")(
-                    context=self.context,
-                    depth=10
+                primary_key, representation = zip(
+                    *self.get_serializer_class(model, use_case="Deep")(
+                        context=self.context,
+                        depth=10
+                    ).deep_process(
+                        datas if isinstance(datas, list) else [datas],
+                        delete_models
+                    )
                 )
-                repr(serializer)  # needed to preload all nested serializer, trying to find a better solution
-                primary_key, representation = zip(*serializer.deep_process(
-                    datas if isinstance(datas, list) else [datas],
-                    delete_models
-                ))
                 if any("ERROR" in data for data in representation if isinstance(data, dict)):
                     raise ValidationError(list(representation))
                 return list(representation) if verbose else list(primary_key)
@@ -629,12 +640,6 @@ class DeepSerializer(serializers.ModelSerializer):
             A serializer for the model {_model}, used for {_use_case if _use_case else 'anything'}.
             
             This serializer inherits from the DeepSerializer and includes a Meta class with the model, a depth of 0, all fields, and the use case. The model and use case are provided when the serializer is created in the get_serializer_class method.
-            
-            Attributes:
-                Meta: A class used to provide metadata to the serializer. It includes the model, a depth of 0, all fields, and the use case.
-            
-                model (Model): The model of the serializer.
-                use_case (str): The use case for which the serializer will be used. If empty, the main serializer for this model will be used.
             '''
 
         return cls._serializers[serializer_name]
