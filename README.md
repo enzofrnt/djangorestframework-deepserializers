@@ -1,3 +1,5 @@
+THIS FORK IS IN REWORK FROM THE ORIGINAL REPO. IT IS NOT YET FUNCTIONAL.
+
 # DeepSerializer
 
 Another Django REST framework addon for those who don't have time.
