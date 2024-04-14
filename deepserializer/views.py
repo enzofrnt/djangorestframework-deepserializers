@@ -8,7 +8,8 @@ from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from typing import List
 from .serializers import DeepSerializer
 from .utils import ModelInfo
-
+from .renderers import DeepBrowsableAPIRenderer
+from rest_framework.renderers import JSONRenderer
 
 ###################################################################################################
 #
@@ -191,6 +192,7 @@ class ModelDeepViewSet(ReadOnlyModelDeepViewSet):
     """
     A view set that provide deep read and write functionality. This viewset is designed to make deep reading and writing easier.
     """
+    renderer_classes = (DeepBrowsableAPIRenderer, JSONRenderer)
     use_case = ""
 
     def create(self, request, *args, **kwargs):
