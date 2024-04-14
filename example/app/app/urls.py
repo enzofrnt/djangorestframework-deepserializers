@@ -17,7 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
-from deepserializer import DeepViewSet, ModelInfo
+from deepserializers import DeepViewSet, ModelInfo
 from deepserializer_app.models import HighSchool, Student, Class
 
 router = routers.DefaultRouter()

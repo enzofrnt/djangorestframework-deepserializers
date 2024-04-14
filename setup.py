@@ -9,17 +9,17 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name='djangorestframework-deepserializer',
-    version='0.1.17',
+    name='djangorestframework-deepserializers',
+    version='0.1',
     packages=['deepserializer'],
     install_requires=[
         'Django',
         'djangorestframework',
     ],
-    description='A package to create deep serializer for django rest framework',
+    description='A package to create deep Serializers and ModelViewSet for django rest-framework',
     long_description=long_description,
     long_description_content_type="text/markdown",
-    author='Horou and Enzo_frnt',
-    url='https://github.com/Horou/djangorestframework-deepserializer',
+    author='Made by enzo_frnt from the Horou repo',
+    url='https://github.com/enzofrnt/djangorestframework-deepserializers',
     keywords=["Django", "Django REST Framework", "Deep", "Depth", "serializer", "viewset", "nested", "nested serializer"],
 )
