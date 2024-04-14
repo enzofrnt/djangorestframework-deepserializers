@@ -183,24 +183,26 @@ The posted request:
 `views.py`
 ```Python
 from rest_framework import status
+from rest_framework.decorators import action
 from rest_framework.response import Response
-from deepserializer import DeepViewSet
+from deepserializer import DeepViewSet, DeepCreateViewSet
 
 from myapp.models import Book, Chapter
 
 class DeepCreateBookViewSets(DeepViewSet):
     queryset = Book.objects
 
-    def create(self, request, *args, **kwargs):
+
+    @action(detail=False, methods=['post'])
+    def deep_create(self, request):
         serializer = self.get_serializer()
-        results = serializer.deep_update_or_create(
-            self.queryset.model,
-            [request.data],
-            delete_models=[Chapter]
-        )
-        if any("ERROR" in item for item in results if isinstance(item, dict)):
-            return Response(results, status=status.HTTP_409_CONFLICT)
+        results = serializer.deep_update_or_create(self.queryset.model, request.data, raise_exception=True)
         return Response(results, status=status.HTTP_201_CREATED)
+
+# or just this:
+
+class DeepCreateBookViewSets(DeepCreateViewSet):
+    queryset = Book.objects
 ```
 The `deep_update_or_create` function get a list of data and return either a list of primary_keys or a list of representations
 based on the optional parameter verbose.
