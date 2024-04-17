@@ -51,11 +51,11 @@ class DeepViewSet():
             router: A rest_framework router.
             models_info (list): A list of ModelInfo objects containing the model and whether it needs to be secure or not.
         """
-        if model_info.secure:
-            used_view_set = SecureModelDeepViewSet
-        else:
-            used_view_set = ModelDeepViewSet
         for model_info in models_info:
+            if model_info.secure:
+                used_view_set = SecureModelDeepViewSet
+            else:
+                used_view_set = ModelDeepViewSet
             router.register(model_info.model.__name__, cls.get_view_set_class(model_info.model, specific_view_set=used_view_set), basename=model_info.model.__name__)
 
     @classmethod
