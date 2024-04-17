@@ -9,7 +9,7 @@ This projects presume that you already have some or all your django models compl
 
 ## Installation
 
-You can install `djangorestframework-deepserializer` using pip:
+You can install `djangorestframework-deepserializers` using pip:
 
 ```bash
 pip install djangorestframework-deepserializers

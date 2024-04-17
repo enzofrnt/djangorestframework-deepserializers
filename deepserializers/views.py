@@ -45,17 +45,21 @@ class DeepViewSet():
     @classmethod
     def init_router(cls, router, models_info: List[ModelInfo]) -> None:
         """
-        Creates viewsets for all the models and registers them in the router.
+        Creates viewsets for all the models and registers them in the router with the right viewset class depending on the model's security needs.
 
         Args:
             router: A rest_framework router.
-            models (list): A list of models to register in the router.
+            models_info (list): A list of ModelInfo objects containing the model and whether it needs to be secure or not.
         """
+        if model_info.secure:
+            used_view_set = SecureModelDeepViewSet
+        else:
+            used_view_set = ModelDeepViewSet
         for model_info in models_info:
-            router.register(model_info.model.__name__, cls.get_view_set_class(model_info), basename=model_info.model.__name__)
+            router.register(model_info.model.__name__, cls.get_view_set_class(model_info.model, specific_view_set=used_view_set), basename=model_info.model.__name__)
 
     @classmethod
-    def get_view_set_class(cls, model_info: ModelInfo, use_case: str = ""):
+    def get_view_set_class(cls, model: Model, use_case: str = "", specific_view_set: ModelViewSet = None) -> ModelViewSet:
         """
         Retrieves or creates a viewset for the specified model and use case.
         Manually created viewsets inheriting DeepViewSet will automatically be used for their use case.
@@ -64,26 +68,27 @@ class DeepViewSet():
 
         Args:
             model (Model): The model related to the desired viewset.
+            specific_view_set (ModelViewSet): A specific viewset to use for this model and use case.
             use_case (str): The use case that this viewset will be used for. If empty, it will be the main viewset for this model.
 
         Returns:
             ViewSet: The viewset for the specified model and use case.
         """
-        view_set_name = use_case + model_info.model.__name__ + "ViewSet"
+        view_set_name = use_case +model.__name__ + "ViewSet"
         if view_set_name not in cls._viewsets:
-            _model, _use_case = model_info.model, use_case
+            _model, _use_case = model, use_case
 
-            if model_info.secure:
-                used_view_set = SecureModelDeepViewSet
+            if specific_view_set:
+                used_view_set = specific_view_set
             else:
-                used_view_set = ModelDeepViewSet
+                used_view_set = SecureModelDeepViewSet
             class CommonViewSet(used_view_set):
                 use_case = _use_case
                 queryset = _model.objects
 
             CommonViewSet.__name__ = view_set_name
             CommonViewSet.__doc__ = f"""
-            Generated ViewSet for the model: '{model_info.model.__name__}'
+            Generated ViewSet for the model: '{model.__name__}'
             Used for {use_case if use_case else 'Read and Write'}
 
             """ + ReadOnlyModelDeepViewSet.get_queryset.__doc__
@@ -180,6 +185,17 @@ class ReadOnlyModelDeepViewSet(DeepViewSet, ReadOnlyModelViewSet):
             queryset = queryset.order_by(*order_by)
         return queryset
 
+    @classmethod
+    def init_router(cls, router, models: List[Model]) -> None:
+        """
+        Creates viewsets for all the models and registers them in the router with the current viewset class.
+
+        Args:
+            router: A rest_framework router.
+            models (list): A list of models for which to create viewsets.
+        """
+        for model in models:
+            router.register(model.__name__, cls.get_view_set_class(model, specific_view_set=cls), basename=model.__name__)
 
 class SecureModelDeepViewSet(ReadOnlyModelDeepViewSet, ModelViewSet):
     """
