@@ -245,7 +245,6 @@ class ModelDeepViewSet(ReadOnlyModelDeepViewSet, ModelViewSet):
     """
     # A view set that provide deep read and write functionality. This viewset is designed to make deep reading and writing easier.
     """
-    renderer_classes = (DeepBrowsableAPIRenderer, JSONRenderer)
     use_case = "DeepReadAndWrite"
     
     def create(self, request, *args, **kwargs):
