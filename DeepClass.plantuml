@@ -9,37 +9,51 @@ Deep - Mean that the CRUD operation is able to be done in depth.
 endlegend
 
 class ModelViewSet {
-    + C
-    + R
-    + U
-    + D
+    + create
+    + list
+    + retrieve
+    + update
+    + partial_update
+    + destroy
 }
+
 class DeepViewSet {
     + Needed method for the deep operation of the module
 }
+
 class ReadOnlyModelViewSet {
-    + R
+    + list
+    + retrieve
 }
+
 class ReadOnlyModelDeepViewSet {
-    + R+Deep
+    + list + Deep
+    + retrieve + Deep
 }
+
 class ModelDeepViewSet {
-    + C+Deep
-    + R+Deep
-    + U+Deep
-    + D
+    + create + Deep
+    + list + Deep
+    + retrieve + Deep
+    + update + Deep
+    + partial_update
+    + destroy
 }
+
 class SecureModelDeepViewSet {
-    + C
-    + R+Deep
-    + U
-    + D
+    + create
+    + list + Deep
+    + retrieve + Deep
+    + update
+    + partial_update
+    + destroy
 }
 
 SecureModelDeepViewSet <|-- ModelViewSet
 SecureModelDeepViewSet <|-- ReadOnlyModelDeepViewSet
 
 ModelDeepViewSet <|-- ReadOnlyModelDeepViewSet
+ModelDeepViewSet <|-- ModelViewSet
 
 ReadOnlyModelDeepViewSet <|-- ReadOnlyModelViewSet
 ReadOnlyModelDeepViewSet <|-- DeepViewSet

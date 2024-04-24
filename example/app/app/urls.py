@@ -14,19 +14,21 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.contrib import admin
+from deepserializer_app.models import HighSchool, Student, Class
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from django.urls import path, include
 from rest_framework import routers
-from deepserializers import DeepViewSet, ModelInfo
-from deepserializer_app.models import HighSchool, Student, Class
+from deepserializers import DeepViewSet
 
 router = routers.DefaultRouter()
 DeepViewSet.init_router(router, [
-    ModelInfo(model=HighSchool, secure=False),
-    ModelInfo(model=Student, secure=True),
-    ModelInfo(model=Class, secure=False),
+    HighSchool,
+    Student,
+    Class,
 ])
 
 urlpatterns = [
     path('', include(router.urls)),
+    path("schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("doc/",SpectacularSwaggerView.as_view(), name="swagger-ui"),
 ]

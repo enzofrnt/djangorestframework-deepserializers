@@ -7,9 +7,15 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from typing import List
 from .serializers import DeepSerializer
-from .utils import ModelInfo
 from .renderers import DeepBrowsableAPIRenderer
 from rest_framework.renderers import JSONRenderer
+
+try:
+    from drf_spectacular.utils import extend_schema, OpenApiParameter
+    from drf_spectacular.types import OpenApiTypes
+    DRF_AVAILABLE = True
+except ImportError:
+    DRF_AVAILABLE = False
 
 ###################################################################################################
 #
@@ -43,7 +49,7 @@ class DeepViewSet():
         return possible_fields
 
     @classmethod
-    def init_router(cls, router, models_info: List[ModelInfo]) -> None:
+    def init_router(cls, router, models: List[Model]) -> None:
         """
         Creates viewsets for all the models and registers them in the router with the right viewset class depending on the model's security needs.
 
@@ -51,12 +57,12 @@ class DeepViewSet():
             router: A rest_framework router.
             models_info (list): A list of ModelInfo objects containing the model and whether it needs to be secure or not.
         """
-        for model_info in models_info:
-            if model_info.secure:
+        for model in models:
+            if getattr(model._meta, 'secure', True):
                 used_view_set = SecureModelDeepViewSet
             else:
                 used_view_set = ModelDeepViewSet
-            router.register(model_info.model.__name__, cls.get_view_set_class(model_info.model, specific_view_set=used_view_set), basename=model_info.model.__name__)
+            router.register(model.__name__, cls.get_view_set_class(model, specific_view_set=used_view_set), basename=model.__name__)
 
     @classmethod
     def get_view_set_class(cls, model: Model, use_case: str = "", specific_view_set: ModelViewSet = None) -> ModelViewSet:
@@ -82,14 +88,19 @@ class DeepViewSet():
                 used_view_set = specific_view_set
             else:
                 used_view_set = SecureModelDeepViewSet
+
+
             class CommonViewSet(used_view_set):
                 use_case = _use_case
                 queryset = _model.objects
-
+            if specific_view_set:
+                used_for = specific_view_set.use_case
+            else :
+                used_for = use_case if use_case else 'Read and Write'
             CommonViewSet.__name__ = view_set_name
             CommonViewSet.__doc__ = f"""
             Generated ViewSet for the model: '{model.__name__}'
-            Used for {use_case if use_case else 'Read and Write'}
+            Used for {used_for}
 
             """ + ReadOnlyModelDeepViewSet.get_queryset.__doc__
 
@@ -184,6 +195,31 @@ class ReadOnlyModelDeepViewSet(DeepViewSet, ReadOnlyModelViewSet):
         ]:
             queryset = queryset.order_by(*order_by)
         return queryset
+    
+    if DRF_AVAILABLE:
+        depth_param = OpenApiParameter(
+            name='depth', 
+            description='The depth of the model display.',
+            required=False, 
+            type=OpenApiTypes.INT, 
+            location=OpenApiParameter.QUERY
+        )
+        
+        @extend_schema(
+            parameters=[
+                depth_param
+            ]
+        )
+        def list(self, request, *args, **kwargs):
+            return super().list(request, *args, **kwargs)
+
+        @extend_schema(
+            parameters=[
+                depth_param
+            ]
+        )
+        def retrieve(self, request, *args, **kwargs):
+            return super().retrieve(request, *args, **kwargs)
 
     @classmethod
     def init_router(cls, router, models: List[Model]) -> None:
@@ -202,15 +238,16 @@ class SecureModelDeepViewSet(ReadOnlyModelDeepViewSet, ModelViewSet):
     A viewset that provides deep read and basic write functionality. This viewset is designed to make deep reading easier.
 
     """
-    use_case = ""
+    use_case = "DeepReadOnlyAndBasicWrite"
 
-class ModelDeepViewSet(ReadOnlyModelDeepViewSet):
+
+class ModelDeepViewSet(ReadOnlyModelDeepViewSet, ModelViewSet):
     """
-    A view set that provide deep read and write functionality. This viewset is designed to make deep reading and writing easier.
+    # A view set that provide deep read and write functionality. This viewset is designed to make deep reading and writing easier.
     """
     renderer_classes = (DeepBrowsableAPIRenderer, JSONRenderer)
-    use_case = ""
-
+    use_case = "DeepReadAndWrite"
+    
     def create(self, request, *args, **kwargs):
         return self.perform_deep_update_or_create(self.get_serializer(), request.data)
     
