@@ -1,14 +1,14 @@
 """
 A unique viewset for all your need of deep read and deep write, made easy
 """
+from typing import List
 from django.db.models import Model
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
-from typing import List
+from rest_framework.renderers import JSONRenderer
 from .serializers import DeepSerializer
 from .renderers import DeepBrowsableAPIRenderer
-from rest_framework.renderers import JSONRenderer
 
 try:
     from drf_spectacular.utils import extend_schema, OpenApiParameter
@@ -58,7 +58,7 @@ class DeepViewSet():
             models_info (list): A list of ModelInfo objects containing the model and whether it needs to be secure or not.
         """
         for model in models:
-            if getattr(model._meta, 'secure', True):
+            if getattr(model, 'secure', True):
                 used_view_set = SecureModelDeepViewSet
             else:
                 used_view_set = ModelDeepViewSet

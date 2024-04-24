@@ -9,3 +9,4 @@ db.sqlite3-journal
 build/
 dist/
 models.puml
+.idea/
