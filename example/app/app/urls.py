@@ -19,7 +19,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from django.urls import path, include
 from rest_framework import routers
 from deepserializers import DeepViewSet
-from deepserializer_app.views import SimpleStudentViewSet
+from deepserializer_app.views import SimpleStudentViewSet, SimpleClassViewSet
 
 router = routers.DefaultRouter()
 DeepViewSet.init_router(router, [
@@ -29,6 +29,7 @@ DeepViewSet.init_router(router, [
 ])
 
 router.register("simple-student", SimpleStudentViewSet, basename="simple-student")
+router.register("simple-class", SimpleClassViewSet, basename="simple-class")
 
 urlpatterns = [
     path('', include(router.urls)),
