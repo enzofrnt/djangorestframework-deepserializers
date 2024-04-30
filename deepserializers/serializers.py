@@ -16,7 +16,7 @@ from rest_framework.utils.field_mapping import (get_nested_relation_kwargs, )
 ########################################################################################################################
 
 
-class DeepSerializer(serializers.ModelSerializer):
+class DeepModelSerializer(serializers.ModelSerializer):
     """
     A base serializer for handling deep serialization of Django models.
 
@@ -38,25 +38,41 @@ class DeepSerializer(serializers.ModelSerializer):
         Args:
             **kwargs: Arbitrary keyword arguments.
         """
+        # Initialize the subclass with specific metadata
         super().__init_subclass__(**kwargs)
+
+        # Check if the subclass has a Meta class
         if hasattr(cls, "Meta"):
+            # Check if the Meta class has a model attribute
             if not hasattr(cls.Meta, "use_case"):
                 cls.Meta.use_case = ""
             model = cls.Meta.model
+
+            # Define the serializer name
             cls._serializers[cls.Meta.use_case + model.__name__ + "Serializer"] = cls
-            excludes = [] if cls.Meta.fields == '__all__' else [
-                field_relation.related_model
-                for field_relation in model._meta.get_fields()
-                if field_relation.related_model and field_relation.name not in cls.Meta.fields
-            ]
+
+            # Adding fields to exclude from the serializer
+            excludes = [] 
+            if cls.Meta.fields != '__all__' :
+                for field_relation in model._meta.get_fields():
+                    if field_relation.related_model and field_relation.name not in cls.Meta.fields:
+                        excludes.append(field_relation.related_model)
+            
+
+            # Use the _build_related_paths method to obtain the necessary paths for optimized queries.
             selects_related, prefetches_related, prefetches_with_selects = cls._build_related_paths(model, excludes)
+
+            # Store the obtained paths for use in serialization queries.
             cls._selects_related, cls._prefetches_related = selects_related, prefetches_related
             cls._prefetches_related_with_selects = prefetches_with_selects
+
+            # Combine all paths to facilitate global access and for potential integrity checks.
             cls._all_path_related = sorted(set(selects_related + prefetches_related + [
                 f"{prefetch_path}__{select_path}"
                 for prefetch_path, (_, prefetch_selects) in prefetches_with_selects.items()
                 for select_path in prefetch_selects
             ]))
+
             forward_one, forward_many, reverse_one, reverse_many = cls._build_model_relationships(model, excludes)
             cls._forward_one_relationships, cls._forward_many_relationships = forward_one, forward_many
             cls._reverse_one_relationships, cls._reverse_many_relationships = reverse_one, reverse_many
@@ -66,6 +82,7 @@ class DeepSerializer(serializers.ModelSerializer):
                 **{field_name: model for field_name, (model, _) in reverse_one.items()},
                 **{field_name: model for field_name, (model, _) in reverse_many.items()}
             }
+            
             cls.Meta.original_depth = cls.Meta.depth
             cls.Meta.read_only_fields = tuple({
                 *(cls.Meta.read_only_fields if hasattr(cls.Meta, "read_only_fields") else []),
@@ -139,22 +156,44 @@ class DeepSerializer(serializers.ModelSerializer):
                 - list[str]: Paths for prefetch_related queries.
                 - dict[str, tuple[Model, list[str]]]: Mapping of prefetch_related paths to tuples of related model and its select_related paths.
         """
-        selects_related, prefetches_related, prefetches_related_with_selects = [], [], {}
+        # Initialize lists to store paths for select_related and prefetch_related queries.
+        selects_related, prefetches_related = [], []
+
+        # Dictionary to store combinations of prefetch_related with their necessary select_related sub-paths.
+        prefetches_related_with_selects = {}
+
+        # Iterate over all field relationships defined in the model's metadata.
         for field_relation in parent_model._meta.get_fields():
+            # Check if the field is a relation to another model and not in the excluded models.
             if (model := field_relation.related_model) and model not in excludes:
+                # Check for relationship attributes to decide on select or prefetch.
                 if not hasattr(field_relation, "field") or field_relation.related_name:
+                    # Recursively build paths for the related model to handle nested relationships.
                     selects, prefetches, prefetches_selects = cls._build_related_paths(model, excludes + [parent_model])
+                    
+                    # Field name of the current model relation.
                     field_name = field_relation.name
+                    
+                    # Determine if the relationship is of 'one-to-one' or 'many-to-one' type.
                     if field_relation.one_to_one or field_relation.many_to_one:
+                        # Accumulate paths for select_related, which works efficiently for these relationships.
                         selects_related += [field_name] + [f"{field_name}__{path}" for path in selects]
+                        # Also consider these paths for prefetch_related in a nested scenario.
                         prefetches_related += [f"{field_name}__{path}" for path in prefetches]
                     else:
+                        # For 'many-to-many' and 'one-to-many', prefetch_related is more appropriate.
                         prefetches_related += [field_name] + [f"{field_name}__{path}" for path in prefetches]
                         if selects:
+                            # If there are nested selects under this prefetch, record them.
                             prefetches_related_with_selects[field_name] = model, selects
+
+                    # Handle additional nested prefetch/select combinations generated recursively.
                     for path, prefetch_model_and_selects in prefetches_selects.items():
                         prefetches_related_with_selects[f"{field_name}__{path}"] = prefetch_model_and_selects
+
+        # Return the constructed lists and dictionary of paths.
         return selects_related, prefetches_related, prefetches_related_with_selects
+
 
     @classmethod
     def optimize_queryset(cls, queryset, depth: int, relations_paths: set[str]):
