@@ -10,8 +10,8 @@ class SimpleStudentSerializer(serializers.ModelSerializer):
 class SimpleClassSerializer(DeepSerializer):
     class Meta:
         model = Class
-        fields = '__all__'
+        # fields = '__all__'
         # fields = ('name', 'students')
-        exclude = ('students',)
+        # exclude = ('students',)
         # students_fields = ('name', 'age')
         depth = 0

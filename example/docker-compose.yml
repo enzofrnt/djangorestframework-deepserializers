@@ -6,7 +6,6 @@ services:
     volumes:
       - ./app:/app
       - ../:/deepserializers
-      - /tmp/python:/usr/local/bin/python3
     ports:
       - "8000:8000"
     restart: unless-stopped
