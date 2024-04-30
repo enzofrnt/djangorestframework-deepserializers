@@ -11,7 +11,12 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setup(
     name='djangorestframework-deepserializers',
     version='0.1',
-    packages=['deepserializers'],
+    packages=[
+        'deepserializers'
+    ],
+    package_data={
+        'deepserializers': ['templates/deepserializers/*.html'],  # Include any html files in the templates/deepserializers
+    },
     install_requires=[
         'Django',
         'djangorestframework',
