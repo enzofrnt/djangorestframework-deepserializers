@@ -10,7 +10,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='djangorestframework-deepserializers',
-    version='0.1',
+    version='1.0-alpha.1',
     packages=[
         'deepserializers'
     ],
@@ -27,4 +27,5 @@ setup(
     author='Made by enzo_frnt from the Horou repo',
     url='https://github.com/enzofrnt/djangorestframework-deepserializers',
     keywords=["Django", "Django REST Framework", "Deep", "Depth", "serializer", "viewset", "nested", "nested serializer"],
+    test_suite='tests',
 )

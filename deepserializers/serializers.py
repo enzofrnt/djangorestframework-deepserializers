@@ -83,7 +83,7 @@ class DeepModelSerializer(serializers.ModelSerializer):
                 **{field_name: model for field_name, (model, _) in reverse_many.items()}
             }
             
-            cls.Meta.original_depth = cls.Meta.depth
+            cls.Meta.original_depth = getattr(cls.Meta, "depth", 0)
             cls.Meta.read_only_fields = tuple({
                 *(cls.Meta.read_only_fields if hasattr(cls.Meta, "read_only_fields") else []),
                 *reverse_one,
@@ -100,8 +100,10 @@ class DeepModelSerializer(serializers.ModelSerializer):
             *args: Arbitrary positional arguments.
             **kwargs: Arbitrary keyword arguments.
         """
+        
         self.Meta.depth = kwargs.pop("depth", self.Meta.original_depth)
         self.relations_paths = set(kwargs.pop("relations_paths", self.get_relationships_paths(depth=self.Meta.depth)))
+        #TODO : Verfy if it's possible to put the super call at the beginning of the init methodprint("kaoukakou")
         super().__init__(*args, **kwargs)
 
     @classmethod
@@ -667,7 +669,7 @@ class DeepModelSerializer(serializers.ModelSerializer):
         if serializer_name not in cls._serializers:
             _model, _use_case = model, use_case
 
-            class CommonSerializer(DeepSerializer):
+            class CommonSerializer(DeepModelSerializer):
                 class Meta:
                     model = _model
                     depth = 0

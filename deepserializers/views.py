@@ -7,7 +7,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework.renderers import JSONRenderer
-from .serializers import DeepSerializer
+from .serializers import DeepModelSerializer
 from .renderers import DeepBrowsableAPIRenderer
 
 try:
@@ -127,7 +127,7 @@ class ReadOnlyModelDeepViewSet(DeepViewSet, ReadOnlyModelViewSet):
             cls._viewsets[cls.use_case + model.__name__ + "ViewSet"] = cls
             cls._possible_fields = cls.build_possible_fields(model, [])
             if cls.serializer_class is None:
-                cls.serializer_class = DeepSerializer.get_serializer_class(model, use_case=cls.use_case)
+                cls.serializer_class = DeepModelSerializer.get_serializer_class(model, use_case=cls.use_case)
 
     def get_serializer(self, *args, **kwargs):
         """
